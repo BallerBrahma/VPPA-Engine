@@ -1,0 +1,45 @@
+[project]
+name = "vppa"
+version = "0.1.0"
+description = "Settlement and basis-risk engine for utility-scale solar VPPAs"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "pyarrow>=16.0",
+    "duckdb>=1.0",
+    "pydantic>=2.7",
+    "gridstatus>=0.28",
+    "nrel-pysam>=5.1",
+    "matplotlib>=3.9",
+    "plotly>=5.22",
+    "typer>=0.12",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.36"]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[project.scripts]
+vppa = "vppa.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vppa"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# uv's editable-install .pth for this project has been observed acquiring the
+# macOS "hidden" file flag after sync on this machine, which Python 3.13's
+# site.py silently skips -- breaking `import vppa`. Adding src directly here
+# makes tests independent of that install path entirely.
+pythonpath = ["src"]

@@ -1,0 +1,17 @@
+name: ercot_west_solar_150mw
+counterparty_view: buyer          # buyer | seller
+strike_usd_mwh: 34.50
+contract_mw: 150
+term: {start: 2023-01-01, end: 2025-12-31}
+settlement_index: hub             # hub | node
+hub: HB_WEST                      # ERCOT's actual DAM trading hub name
+node: WESTSOLAR_ALL               # settlement point where output is sold
+negative_price_floor: 0.0         # null = no floor
+escalation_pct_yr: 0.0
+project:
+  lat: 31.85
+  lon: -102.37
+  dc_capacity_mw: 195             # ILR 1.30
+  tilt_deg: 25
+  azimuth_deg: 180
+  losses_pct: 14
