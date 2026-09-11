@@ -1,0 +1,20 @@
+# Hypothetical VPPA written on a real asset: Sun Valley Solar, Hill County TX.
+# Plant identity, location and AC capacity are from EIA-860; the strike and
+# contract terms are illustrative, not a real deal.
+name: sun_valley_solar_central
+counterparty_view: buyer
+strike_usd_mwh: 32.00
+contract_mw: 250
+term: {start: 2023-01-01, end: 2025-12-31}
+settlement_index: hub
+hub: HB_NORTH
+node: SUNVASLR_ALL
+negative_price_floor: 0.0
+escalation_pct_yr: 0.0
+project:
+  lat: 31.870
+  lon: -97.015
+  dc_capacity_mw: 325.0           # ILR 1.30
+  tilt_deg: 26
+  azimuth_deg: 180
+  losses_pct: 14

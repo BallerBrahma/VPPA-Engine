@@ -1,0 +1,20 @@
+# Hypothetical VPPA written on a real asset: Noble Solar, Denton County TX.
+# Plant identity, location and AC capacity are from EIA-860; the strike and
+# contract terms are illustrative, not a real deal.
+name: noble_solar_north
+counterparty_view: buyer
+strike_usd_mwh: 32.00
+contract_mw: 275
+term: {start: 2023-01-01, end: 2025-12-31}
+settlement_index: hub
+hub: HB_NORTH
+node: NOBLESLR_ALL
+negative_price_floor: 0.0
+escalation_pct_yr: 0.0
+project:
+  lat: 33.262
+  lon: -97.238
+  dc_capacity_mw: 357.5           # ILR 1.30
+  tilt_deg: 28
+  azimuth_deg: 180
+  losses_pct: 14

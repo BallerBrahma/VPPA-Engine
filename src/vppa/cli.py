@@ -12,7 +12,13 @@ from vppa.ingest.prices import fetch_ercot_hub_dam_prices
 from vppa.model import Contract, load_contract
 from vppa.report.statement import monthly_statement
 
-app = typer.Typer()
+app = typer.Typer(help="Solar VPPA settlement and basis engine.")
+
+
+@app.callback()
+def main() -> None:
+    """Registered so the CLI keeps subcommand routing (`vppa settle ...`)
+    rather than collapsing its single command into the bare entry point."""
 
 
 def _aligned_price_series(generation: pd.Series, price: pd.Series) -> pd.Series:
@@ -62,7 +68,7 @@ def _settle_contract(contract: Contract, year: int) -> pd.DataFrame:
     return settled[settled.index.year == year]
 
 
-@app.command()
+@app.command("settle")
 def settle_contract(
     contract_path: str = typer.Argument(..., help="Path to a contract YAML file"),
     year: int = typer.Option(..., "--year", help="Calendar year to settle"),
