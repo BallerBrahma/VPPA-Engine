@@ -79,6 +79,28 @@ captured 71%. A separate cross-section of all 88 ERCOT solar nodes over a recent
 **−$21.52/MWh**. Nothing about a hub-settled deal protects against that, and it
 cannot be estimated from hub data alone.
 
+## Scenarios
+
+Stresses are applied to `settle()`'s *inputs*, never to its results, so a
+scenario can never drift from what the engine would actually compute. Sun Valley
+2025, settled at its node against a $32.00 strike:
+
+| Scenario | Generation (MWh) | Capture rate | Breakeven | Cash to buyer |
+|---|---|---|---|---|
+| base | 496,969 | 34.4% | $15.61 | −$8.15M |
+| P90 production | 452,384 | 34.4% | $15.61 | **−$7.42M** |
+| price collapse (−30%) | 496,969 | 34.4% | $10.93 | −$10.47M |
+| bad basis year (−$10/MWh) | 496,969 | −2.6% | $8.66 | −$11.60M |
+| combined stress | 452,384 | −35.3% | $4.35 | −$12.51M |
+
+Note the P90 row: a **worse** production year leaves the buyer **better off**.
+The contract is underwater in every lit hour, so less production means less
+volume to pay out on. P90 is a downside case for the *seller*, which is why
+these are read per counterparty rather than collapsed into one "bad case"
+number. Under a bad-basis year the capture rate goes negative outright — the
+generation-weighted price the asset earns falls below zero while the market
+average stays positive.
+
 ## How VPPA settlement works
 
 A VPPA is a financial swap layered on top of physical market sales. The generator
@@ -138,8 +160,9 @@ These are choices, not facts, and they move the numbers:
 ```bash
 uv sync --extra dev
 cp .env.example .env        # then add your NREL, gridstatus.io and EIA keys
-uv run pytest               # 50 tests, no network required
+uv run pytest               # 58 tests, no network required
 uv run vppa settle contracts/example_ercot_west.yaml --year 2024
+uv run streamlit run src/vppa/report/app.py   # interactive front end
 ```
 
 The test suite is deliberately offline and deterministic: every number it checks
