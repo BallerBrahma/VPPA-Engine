@@ -18,3 +18,7 @@ project:
   tilt_deg: 25
   azimuth_deg: 180
   losses_pct: 14
+storage:                          # Phase 4 overlay: 4-hour battery at ~25% of AC
+  power_mw: 25
+  duration_hours: 4
+  round_trip_efficiency: 0.85

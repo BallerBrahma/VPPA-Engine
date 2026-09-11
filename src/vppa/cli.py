@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import typer
 
+from vppa.engine.dispatch import storage_uplift
 from vppa.engine.metrics import breakeven_strike, capture_rate
 from vppa.engine.settlement import settle
 from vppa.ingest.generation import fetch_pvwatts_generation
@@ -87,6 +88,19 @@ def settle_contract(
         f"Breakeven strike: ${breakeven:.2f}/MWh "
         f"(contract strike: ${contract.strike_usd_mwh:.2f}/MWh)"
     )
+
+    if contract.storage is not None:
+        uplift = storage_uplift(generation, price, contract.storage)
+        typer.echo(
+            f"\nWith {contract.storage.power_mw:.0f} MW / "
+            f"{contract.storage.energy_capacity_mwh:.0f} MWh storage: "
+            f"capture rate {uplift['capture_rate_with_storage']:.1%} "
+            f"(+{(uplift['capture_rate_with_storage'] - uplift['capture_rate_base']) * 100:.1f} pp), "
+            f"revenue +${uplift['revenue_uplift_usd'] / 1e6:,.2f}M"
+        )
+        typer.echo(
+            "  (perfect-foresight dispatch, no degradation or capex -- an upper bound)"
+        )
 
 
 if __name__ == "__main__":

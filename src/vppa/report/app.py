@@ -18,6 +18,7 @@ if str(_SRC) not in sys.path:
 
 import streamlit as st
 
+from vppa.engine.dispatch import dispatch, storage_uplift
 from vppa.engine.metrics import (
     basis,
     breakeven_strike,
@@ -123,8 +124,8 @@ if breakeven < contract.strike_usd_mwh:
         "deal is underwater for the buyer."
     )
 
-tab_statement, tab_basis, tab_scenarios = st.tabs(
-    ["Monthly statement", "Basis", "Scenarios"]
+tab_statement, tab_basis, tab_scenarios, tab_storage = st.tabs(
+    ["Monthly statement", "Basis", "Scenarios", "Storage"]
 )
 
 with tab_statement:
@@ -198,3 +199,47 @@ with tab_scenarios:
         "case for the seller, which is why these are read per counterparty "
         "rather than as one 'bad case' number."
     )
+
+
+with tab_storage:
+    if contract.storage is None:
+        st.info(
+            "This contract has no `storage:` block. Add one to the contract YAML "
+            "(power_mw, duration_hours, round_trip_efficiency) to model the overlay."
+        )
+    else:
+        spec = contract.storage
+        uplift = storage_uplift(generation, index_price, spec)
+        gain_pp = (
+            uplift["capture_rate_with_storage"] - uplift["capture_rate_base"]
+        ) * 100
+
+        s1, s2, s3 = st.columns(3)
+        s1.metric(
+            "Capture rate with storage",
+            f"{uplift['capture_rate_with_storage']:.1%}",
+            delta=f"{gain_pp:+.1f} pp",
+        )
+        s2.metric("Revenue uplift", f"${uplift['revenue_uplift_usd'] / 1e6:,.2f}M")
+        s3.metric(
+            "Round-trip loss",
+            f"{uplift['round_trip_loss_mwh']:,.0f} MWh",
+            delta=f"{uplift['cycles']:,.0f} cycles",
+            delta_color="off",
+        )
+        st.caption(
+            f"{spec.power_mw:,.0f} MW / {spec.energy_capacity_mwh:,.0f} MWh, "
+            f"{spec.round_trip_efficiency:.0%} round-trip, charging only from the "
+            "project's own output."
+        )
+        st.warning(
+            "Upper bound, not a forecast: the LP dispatches against the whole "
+            "year's realised prices with perfect foresight, and carries no "
+            "degradation, cycling cost or capex."
+        )
+
+        profile = dispatch(generation, index_price, spec)
+        day = profile.groupby(profile.index.hour)[["generation", "delivered"]].mean()
+        day.index.name = "hour (UTC)"
+        st.caption("Average day: storage moves output out of midday into the peak.")
+        st.line_chart(day, height=320)

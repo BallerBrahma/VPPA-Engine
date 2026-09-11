@@ -101,6 +101,37 @@ number. Under a bad-basis year the capture rate goes negative outright — the
 generation-weighted price the asset earns falls below zero while the market
 average stays positive.
 
+## Storage: what it would take to fix it
+
+Pair each project with a 4-hour battery at roughly 25% of AC capacity, charging
+only from its own output, and dispatch it optimally against 2025 nodal prices:
+
+| Project | Capture rate | With storage | Uplift | Revenue uplift |
+|---|---|---|---|---|
+| Lamesa (West) | 47.6% | 71.8% | +24.3 pp | +$2.64M ($11.32/MWh) |
+| Noble (North) | 70.3% | 97.9% | +27.7 pp | +$4.18M ($7.56/MWh) |
+| Sun Valley (Central) | 34.4% | 72.6% | **+38.2 pp** | +$4.93M ($9.92/MWh) |
+
+The fix is largest where the problem is worst: Sun Valley, the project with the
+$13.79/MWh basis blowout, gains the most. That is the arc the whole exercise was
+built to trace — the shape problem, its cost, and what undoing it is worth.
+
+**Two caveats make these upper bounds, not forecasts:**
+
+- **The dispatch has perfect foresight.** The LP optimises against the whole
+  year's realised prices at once. A real operator dispatches against a forecast
+  and will capture materially less. This is the single biggest reason to read
+  these numbers as a ceiling.
+- **No degradation, no cycling cost, no capex.** The optimiser cycles ~390–450
+  times a year, above the ~365 many warranties assume, because nothing in the
+  objective penalises a cycle. And this is *gross revenue uplift* — it says
+  nothing about whether the battery pays for itself. A 62 MW / 248 MWh system is
+  a nine-figure capital decision that this model does not attempt.
+
+Round-trip losses are real in the figures: delivered volume is strictly below
+generation (16,627 MWh lost for Sun Valley), so every dollar of uplift comes
+from better price capture rather than from more energy.
+
 ## How VPPA settlement works
 
 A VPPA is a financial swap layered on top of physical market sales. The generator
@@ -149,7 +180,11 @@ These are choices, not facts, and they move the numbers:
   real-time, or at its own node, faces a different number.
 - No curtailment modelling. Real projects are curtailed during the same
   oversupplied hours this analysis prices at or below zero, so realized volumes
-  would be lower than modelled.
+  would be lower than modelled. The storage overlay is therefore credited with
+  absorbing energy that a real plant might simply have curtailed more cheaply.
+- The battery LP assumes perfect price foresight and charges only from the
+  project's own output. It carries no degradation, cycling cost or capex, so
+  its uplift is an upper bound on what a real asset would earn.
 - Nodal price history comes from a commercial API (gridstatus.io); ERCOT's free
   archive covers only hubs and load zones, plus a ~31-day rolling window of nodal
   prices.
@@ -160,7 +195,7 @@ These are choices, not facts, and they move the numbers:
 ```bash
 uv sync --extra dev
 cp .env.example .env        # then add your NREL, gridstatus.io and EIA keys
-uv run pytest               # 58 tests, no network required
+uv run pytest               # 65 tests, no network required
 uv run vppa settle contracts/example_ercot_west.yaml --year 2024
 uv run streamlit run src/vppa/report/app.py   # interactive front end
 ```

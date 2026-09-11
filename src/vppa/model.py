@@ -137,6 +137,40 @@ class ProjectSpec(BaseModel):
         return v
 
 
+class StorageSpec(BaseModel):
+    """An optional battery paired with the project (Phase 4 storage overlay).
+
+    Modelled as DC-coupled: it charges only from the project's own output,
+    which is both the common utility-scale arrangement and what keeps the
+    "shift solar out of midday" framing honest -- no grid arbitrage sneaks
+    into the capture-rate uplift.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    power_mw: float
+    duration_hours: float
+    round_trip_efficiency: float = 0.85
+
+    @field_validator("power_mw", "duration_hours")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError(f"must be positive, got {v}")
+        return v
+
+    @field_validator("round_trip_efficiency")
+    @classmethod
+    def _valid_efficiency(cls, v: float) -> float:
+        if not 0 < v <= 1:
+            raise ValueError(f"round_trip_efficiency must be in (0, 1], got {v}")
+        return v
+
+    @property
+    def energy_capacity_mwh(self) -> float:
+        return self.power_mw * self.duration_hours
+
+
 class Contract(BaseModel):
     """A single VPPA deal, as loaded from a contract YAML file."""
 
@@ -153,6 +187,7 @@ class Contract(BaseModel):
     negative_price_floor: float | None = None
     escalation_pct_yr: float = 0.0
     project: ProjectSpec
+    storage: StorageSpec | None = None
 
     @field_validator("contract_mw")
     @classmethod
