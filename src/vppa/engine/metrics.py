@@ -38,3 +38,39 @@ def breakeven_strike(
     """
     effective_price = index_price if floor is None else index_price.clip(lower=floor)
     return _generation_weighted_average(effective_price, generation_mwh)
+
+
+def basis(node_price: pd.Series, hub_price: pd.Series) -> pd.Series:
+    """Hourly locational basis in $/MWh: node price minus hub price.
+
+    A hub-settled VPPA pays out against the hub, while the project actually
+    sells its output at its own node. Basis is the gap that leaves unhedged.
+    Negative basis means the node clears below the hub -- the project earns
+    less than the contract settles against.
+
+    Solar-heavy pockets tend to run most negative exactly when solar
+    generates, which is why cost_of_basis() weights by generation rather than
+    by hour.
+    """
+    if not node_price.index.equals(hub_price.index):
+        raise ValueError(
+            "node_price and hub_price indexes do not match -- both must cover "
+            "the same hours before differencing them"
+        )
+    return (node_price - hub_price).rename("basis")
+
+
+def cost_of_basis(basis_series: pd.Series, generation_mwh: pd.Series) -> float:
+    """Generation-weighted average basis in $/MWh.
+
+    Signed, not flipped: a negative result means the project realizes less
+    per MWh than the hub the contract settles against, i.e. basis costs it
+    money. Weighting by generation rather than by hour is the point -- basis
+    during hours the plant is dark costs the project nothing.
+    """
+    return _generation_weighted_average(basis_series, generation_mwh)
+
+
+def negative_basis_hours(basis_series: pd.Series) -> int:
+    """Count of hours the node cleared strictly below the hub."""
+    return int((basis_series < 0).sum())
