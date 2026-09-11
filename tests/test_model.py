@@ -78,3 +78,41 @@ def test_generation_profile_rejects_negative_values():
 def test_contract_is_immutable_construction_from_dict_roundtrip():
     contract = load_contract(EXAMPLE_CONTRACT)
     assert Contract.model_validate(contract.model_dump()) == contract
+
+
+def test_strike_escalates_from_the_first_year_of_the_term(tmp_path):
+    text = EXAMPLE_CONTRACT.read_text().replace(
+        "escalation_pct_yr: 0.0", "escalation_pct_yr: 2.5"
+    )
+    path = tmp_path / "esc.yaml"
+    path.write_text(text)
+    contract = load_contract(path)
+
+    assert contract.strike_for_year(2023) == pytest.approx(34.50)
+    assert contract.strike_for_year(2024) == pytest.approx(34.50 * 1.025)
+    assert contract.strike_for_year(2025) == pytest.approx(34.50 * 1.025**2)
+
+
+def test_zero_escalation_leaves_the_strike_flat(example_contract):
+    assert example_contract.strike_for_year(2025) == pytest.approx(
+        example_contract.strike_usd_mwh
+    )
+
+
+def test_counterparty_sign_flips_for_a_seller_view(tmp_path, example_contract):
+    assert example_contract.counterparty_sign == 1
+
+    text = EXAMPLE_CONTRACT.read_text().replace(
+        "counterparty_view: buyer", "counterparty_view: seller"
+    )
+    path = tmp_path / "seller.yaml"
+    path.write_text(text)
+
+    assert load_contract(path).counterparty_sign == -1
+
+
+def test_covers_year_bounds_the_term(example_contract):
+    assert example_contract.covers_year(2023)
+    assert example_contract.covers_year(2025)
+    assert not example_contract.covers_year(2019)
+    assert not example_contract.covers_year(2026)

@@ -1,5 +1,7 @@
 # Solar VPPA Settlement & Basis Engine
 
+[![CI](https://github.com/BallerBrahma/VPPA-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/BallerBrahma/VPPA-Engine/actions/workflows/ci.yml)
+
 A library that settles virtual power purchase agreements for utility-scale solar
 and quantifies the basis and shape risk buried in them.
 
@@ -25,6 +27,15 @@ In 2019 solar was scarce and midday *was* the system peak, so the asset earned a
 60% premium over the average market price. By 2025 it captured barely three-fifths
 of that average. Negative-price hours at HB_WEST rose from 33 to 341 a year.
 
+**The 2019 endpoint is inflated, and the honest version of this chart says so.**
+That 160% is mostly one event: August and September 2019 cleared at 196% and 198%
+capture during ERCOT's record-low reserve margin, with 35 hours above $1,000/MWh
+and 27.8% of the year's revenue arriving in 20 hours. Solar happened to be
+generating through a scarcity crisis. Every other month that year sat near 100%.
+So the 160% → 63% span mixes a real penetration effect with a rare scarcity
+windfall at the start. The penetration effect survives on its own: from 2023 to
+2025, with no comparable scarcity event, capture still fell 92.6% → 62.6%.
+
 Settling the example contract against real 2024 prices:
 
 | Metric | Value |
@@ -37,6 +48,22 @@ The project would need a strike of $19.20 to break even on its actual production
 shape. At $34.50 the buyer is underwater by roughly $15/MWh — not because the
 strike was above the average market price, but because it was above the price the
 asset *captures*.
+
+### Is the typical-year shortcut distorting this?
+
+No, and it is worth checking rather than asserting. Re-running the example
+contract against each year's *actual* NSRDB weather:
+
+| Year | Capture (TMY) | Capture (actual) | Difference |
+|---|---|---|---|
+| 2023 | 92.6% | 92.3% | −0.33 pp |
+| 2024 | 65.5% | 65.2% | −0.26 pp |
+| 2025 | 62.6% | 61.2% | −1.48 pp |
+
+TMY tracks actual weather to within 1.5 points and is consistently a little
+optimistic. Note 2025 delivered 4.1% *more* generation than a typical year yet
+captured a *lower* share of the average price — the extra sunlight arrived in
+hours that were worth less, which is the thesis restated from the weather side.
 
 ## Basis: the risk a hub-settled deal leaves on the table
 
@@ -132,6 +159,23 @@ Round-trip losses are real in the figures: delivered volume is strictly below
 generation (16,627 MWh lost for Sun Valley), so every dollar of uplift comes
 from better price capture rather than from more energy.
 
+## Contract terms that actually bind
+
+Every field in a contract YAML changes a number somewhere; none are decorative:
+
+- **`escalation_pct_yr`** compounds the strike annually from the first year of
+  the term, so a 2.5% escalator on a $32.00 strike settles 2024 at $32.80 and
+  2025 at $33.62.
+- **`counterparty_view`** flips the reported sign. `settle()` always returns
+  `cash_to_buyer` as the single canonical convention; a seller-view contract
+  reports the negation rather than quietly showing the buyer's P&L.
+- **`term`** is checked against the settled year. Settling outside it is allowed,
+  because "what would this deal have done in 2019?" is a fair question, but the
+  CLI says out loud that it is a counterfactual.
+- **`negative_price_floor`** caps how far a negative index price can push the
+  settlement, while the raw price is preserved unclipped for analysis.
+- **`storage`** is optional; when present the CLI and UI report the overlay.
+
 ## How VPPA settlement works
 
 A VPPA is a financial swap layered on top of physical market sales. The generator
@@ -149,11 +193,12 @@ the wrong thing to price against.
 
 These are choices, not facts, and they move the numbers:
 
-- **Typical weather, actual prices.** Generation comes from PVWatts run against a
-  TMY (typical meteorological year) file, not the actual weather of each year.
-  This is deliberate for the decay analysis — holding weather fixed isolates the
-  price-shape effect — but it means no single year's figure is a real P&L. A
-  cloudy afternoon in the real 2024 is not correlated with 2024's price spikes.
+- **Typical weather by default, actual weather available.** Generation defaults
+  to a TMY (typical meteorological year) file, which is deliberate for the decay
+  analysis: holding weather fixed means a change in capture rate can only come
+  from prices. Pass `--weather actual` (or `weather="actual"`) to use that year's
+  real NSRDB weather instead, which is what a specific year's P&L needs. The two
+  are cached separately and never substituted for one another.
 - **Inverter loading ratio 1.30**, set explicitly. PVWatts otherwise defaults to
   1.2 regardless of the project, and the ratio changes capture rate materially by
   clipping midday peaks.
@@ -171,8 +216,11 @@ These are choices, not facts, and they move the numbers:
 
 ## Limitations
 
-- TMY weather makes every per-year P&L figure indicative, not actual. Phase 2 of
-  the design calls for actual-year NSRDB data; that work is not done.
+- The TMY default is an approximation, but a measured one. Re-running the example
+  contract on actual NSRDB weather moves capture rate by 0.33 pp (2023), 0.26 pp
+  (2024) and 1.48 pp (2025), always slightly *lower* than TMY suggests. The decay
+  finding is not a TMY artifact, but per-year figures on the default basis are
+  optimistic by up to about 1.5 points.
 - 2021 breaks the decay trend (97.6%, rebounding to 108% in 2022). That is Winter
   Storm Uri: the year's average price was $142.66/MWh, distorted by a handful of
   hours at the $9,000 cap. The denominator is doing that, not the thesis.
@@ -188,6 +236,12 @@ These are choices, not facts, and they move the numbers:
 - Nodal price history comes from a commercial API (gridstatus.io); ERCOT's free
   archive covers only hubs and load zones, plus a ~31-day rolling window of nodal
   prices.
+- The 2019 capture rate (160%) is a scarcity artifact as much as a penetration
+  one — see the note under the headline. Read the 2023–2025 decline as the
+  cleaner measure of the shape effect.
+- Capture rate is sensitive to a handful of extreme hours in any scarcity year,
+  so single-year comparisons across ERCOT's price spikes should be treated with
+  care. Nothing here winsorises or caps prices.
 - One ISO. Everything here is ERCOT.
 
 ## Reproducing
@@ -195,8 +249,9 @@ These are choices, not facts, and they move the numbers:
 ```bash
 uv sync --extra dev
 cp .env.example .env        # then add your NREL, gridstatus.io and EIA keys
-uv run pytest               # 65 tests, no network required
+uv run pytest               # 71 tests, no network required
 uv run vppa settle contracts/example_ercot_west.yaml --year 2024
+uv run vppa settle contracts/lamesa_west.yaml --year 2025 --weather actual
 uv run streamlit run src/vppa/report/app.py   # interactive front end
 ```
 

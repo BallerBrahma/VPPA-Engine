@@ -3,8 +3,8 @@ import pytest
 
 from vppa import store
 from vppa.ingest.generation import (
+    _hourly_index_for_year,
     _read_resource_utc_offset,
-    _tmy_index_for_year,
     fetch_pvwatts_generation,
 )
 
@@ -18,7 +18,7 @@ def test_tmy_index_is_8760_with_expected_dst_and_leap_day_artifacts():
     # nonexistent spring-forward hour collided with the next real hour, and
     # one 2-hour gap where the doubled fall-back hour can't be represented at
     # all (TMY only ever has one naive row per hour label).
-    index = _tmy_index_for_year(2024, std_offset_hours=-6)
+    index = _hourly_index_for_year(2024, std_offset_hours=-6)
 
     assert len(index) == 8760
     assert str(index.tz) == "UTC"
@@ -32,7 +32,7 @@ def test_tmy_index_is_8760_with_expected_dst_and_leap_day_artifacts():
 
 
 def test_tmy_index_is_8760_on_non_leap_year():
-    index = _tmy_index_for_year(2023, std_offset_hours=-6)
+    index = _hourly_index_for_year(2023, std_offset_hours=-6)
 
     assert len(index) == 8760
     assert str(index.tz) == "UTC"
@@ -41,7 +41,7 @@ def test_tmy_index_is_8760_on_non_leap_year():
 def test_tmy_index_matches_standard_time_in_winter():
     # January isn't in DST, so this still matches the fixed-offset result:
     # local midnight Jan 1 in Chicago is 06:00 UTC the same day.
-    index = _tmy_index_for_year(2023, std_offset_hours=-6)
+    index = _hourly_index_for_year(2023, std_offset_hours=-6)
 
     assert index[0] == pd.Timestamp("2023-01-01T06:00:00Z")
 
@@ -50,7 +50,7 @@ def test_tmy_index_shifts_by_dst_offset_in_summer():
     # July is in DST (Central = UTC-5, not the resource file's standard -6);
     # a fixed-offset conversion would put this one hour off from real market
     # time.
-    index = _tmy_index_for_year(2023, std_offset_hours=-6)
+    index = _hourly_index_for_year(2023, std_offset_hours=-6)
     july_first_midnight = index[index.tz_convert("America/Chicago").hour == 0]
     july_first_midnight = july_first_midnight[
         (july_first_midnight.month == 7) & (july_first_midnight.day == 1)
@@ -72,7 +72,7 @@ def test_fetch_returns_cached_series_without_touching_network(
     tmp_path, monkeypatch, example_contract
 ):
     monkeypatch.setattr(store, "DATA_DIR", tmp_path)
-    cached_index = _tmy_index_for_year(2024, std_offset_hours=-6)
+    cached_index = _hourly_index_for_year(2024, std_offset_hours=-6)
     cached = pd.Series(1.0, index=cached_index[~cached_index.duplicated()], name="value")
     store.write_series(cached, source="generation", key=example_contract.name, year=2024)
 
@@ -91,3 +91,31 @@ def test_fetch_raises_clear_error_without_api_credentials(
 
     with pytest.raises(RuntimeError, match="NREL_API_KEY"):
         fetch_pvwatts_generation(example_contract, 2024)
+
+
+def test_fetch_rejects_unknown_weather_basis(example_contract):
+    with pytest.raises(ValueError, match="weather must be"):
+        fetch_pvwatts_generation(example_contract, 2024, weather="sunny")
+
+
+def test_tmy_and_actual_use_separate_cache_namespaces(
+    tmp_path, monkeypatch, example_contract
+):
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    index = _hourly_index_for_year(2024, std_offset_hours=-6)
+    index = index[~index.duplicated()]
+    store.write_series(
+        pd.Series(1.0, index=index, name="value"),
+        source="generation", key=example_contract.name, year=2024,
+    )
+
+    # the TMY partition must not satisfy an actual-weather request: they are
+    # different physical quantities and silently swapping them would make a
+    # per-year P&L quietly wrong
+    monkeypatch.delenv("NREL_API_KEY", raising=False)
+    monkeypatch.delenv("NREL_API_EMAIL", raising=False)
+    with pytest.raises(RuntimeError, match="NREL_API_KEY"):
+        fetch_pvwatts_generation(example_contract, 2024, weather="actual")
+
+    # ...while the TMY request is still served from cache
+    assert len(fetch_pvwatts_generation(example_contract, 2024).series) == 8759

@@ -207,6 +207,35 @@ class Contract(BaseModel):
         """The price point this contract's output actually settles against."""
         return self.hub if self.settlement_index == "hub" else self.node
 
+    @property
+    def counterparty_sign(self) -> int:
+        """+1 to report cash flows from the buyer's side, -1 from the seller's.
+
+        settle() always returns cash_to_buyer, which stays the one canonical
+        convention; this is what flips it for presentation so a seller-view
+        contract doesn't silently show the buyer's P&L.
+        """
+        return 1 if self.counterparty_view == "buyer" else -1
+
+    def strike_for_year(self, year: int) -> float:
+        """The strike escalated to `year`, compounding annually from the first
+        year of the term.
+
+        A contract with escalation_pct_yr set would otherwise settle flat for
+        its whole term, understating the buyer's obligation in later years.
+        """
+        elapsed = year - self.term.start.year
+        return self.strike_usd_mwh * (1 + self.escalation_pct_yr / 100.0) ** elapsed
+
+    def covers_year(self, year: int) -> bool:
+        """Whether `year` falls inside the contract term.
+
+        Settling outside the term is legitimate for counterfactuals (what would
+        this deal have done in 2019?), so this reports rather than forbids --
+        but callers should say out loud when they are doing it.
+        """
+        return self.term.start.year <= year <= self.term.end.year
+
 
 def load_contract(path: str | Path) -> Contract:
     """Load and validate a contract YAML file, e.g. contracts/example_ercot_west.yaml."""

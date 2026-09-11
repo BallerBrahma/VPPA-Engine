@@ -15,6 +15,12 @@ load_dotenv()
 
 RESOURCE_CACHE_DIR = Path("data") / "generation" / "_resource_cache"
 
+# NSRDB products. The typical-year file is a synthetic composite; the
+# aggregated file is that year's real weather. Both are 8,760 hours with no
+# Feb 29, so the calendar reconciliation below is identical for either.
+TMY_RESOURCE_TYPE = "nsrdb-GOES-tmy-v4-0-0"
+ACTUAL_RESOURCE_TYPE = "nsrdb-GOES-aggregated-v4-0-0"
+
 # NSRDB reports weather in fixed standard time (no DST -- solar position
 # doesn't observe clock changes), but the ISO markets we'll join this against
 # settle on prevailing local time, which does. Mapping the standard-time
@@ -38,13 +44,14 @@ def _read_resource_utc_offset(resource_file: str) -> int:
     return int(header["Time Zone"].iloc[0])
 
 
-def _tmy_index_for_year(year: int, std_offset_hours: int) -> pd.DatetimeIndex:
-    """UTC hourly index to stamp a TMY output onto, positionally aligned with
-    PVWatts' raw 8,760-value output array (see fetch_pvwatts_generation for
+def _hourly_index_for_year(year: int, std_offset_hours: int) -> pd.DatetimeIndex:
+    """UTC hourly index to stamp a PVWatts output onto, positionally aligned
+    with its raw 8,760-value output array (see fetch_pvwatts_generation for
     how the one DST collision this produces gets resolved).
 
-    A TMY resource is a synthetic composite year: exactly 8,760 hours, no
-    Feb 29, and no notion of daylight saving. Feb 29 is dropped from the
+    Both NSRDB products are exactly 8,760 hours with no Feb 29 and no notion
+    of daylight saving -- the single-year file omits the leap day just as the
+    typical-year file does, so this applies to either. Feb 29 is dropped from the
     target calendar in local time; the remaining naive hours are localized to
     the region's real prevailing (DST-observing) timezone rather than the
     resource file's fixed offset, so generation lines up with real market
@@ -72,19 +79,28 @@ def _tmy_index_for_year(year: int, std_offset_hours: int) -> pd.DatetimeIndex:
     return localized.tz_convert("UTC")
 
 
-def fetch_pvwatts_generation(contract: Contract, year: int) -> GenerationProfile:
-    """Run PVWatts against TMY weather for `contract.project`, stamped onto
-    `year`'s UTC calendar.
+def fetch_pvwatts_generation(
+    contract: Contract, year: int, weather: str = "tmy"
+) -> GenerationProfile:
+    """Run PVWatts for `contract.project`, stamped onto `year`'s UTC calendar.
 
-    Phase 1 uses TMY (typical, not actual, weather) -- see design doc section
-    2. Results are "typical production against actual [year] prices," not
-    that year's real weather; phase 2 should switch to actual-year NSRDB data
-    before calling any single year's P&L finished.
+    `weather="tmy"` uses a typical meteorological year: a synthetic composite,
+    the same every year. That is the wrong basis for a single year's P&L, but
+    the right one for isolating price-shape effects, since holding weather
+    fixed means a change in capture rate can only come from prices.
+
+    `weather="actual"` uses that year's real NSRDB weather, which is what any
+    claim about a specific year's revenue needs. Note it reintroduces weather
+    as a confounder in year-over-year comparisons.
 
     Caches the NSRDB resource file and the resulting generation series so
-    repeat runs for the same contract/year don't re-hit the network.
+    repeat runs for the same contract/year/weather don't re-hit the network.
     """
-    cached = store.read_series(source="generation", key=contract.name, year=year)
+    if weather not in ("tmy", "actual"):
+        raise ValueError(f"weather must be 'tmy' or 'actual', got {weather!r}")
+
+    source = "generation" if weather == "tmy" else "generation_actual"
+    cached = store.read_series(source=source, key=contract.name, year=year)
     if cached is not None:
         return GenerationProfile(project_name=contract.name, series=cached)
 
@@ -93,7 +109,7 @@ def fetch_pvwatts_generation(contract: Contract, year: int) -> GenerationProfile
     if not api_key or not api_email:
         raise RuntimeError(
             "NREL_API_KEY and NREL_API_EMAIL must be set (e.g. in a .env file) "
-            "to fetch TMY weather from NSRDB -- see https://developer.nrel.gov/signup/"
+            "to fetch weather from NSRDB -- see https://developer.nrel.gov/signup/"
         )
 
     from PySAM import Pvwattsv8, ResourceTools
@@ -103,6 +119,8 @@ def fetch_pvwatts_generation(contract: Contract, year: int) -> GenerationProfile
         tech="pv",
         nrel_api_key=api_key,
         nrel_api_email=api_email,
+        resource_type=TMY_RESOURCE_TYPE if weather == "tmy" else ACTUAL_RESOURCE_TYPE,
+        resource_year="tmy" if weather == "tmy" else str(year),
         resource_dir=str(RESOURCE_CACHE_DIR),
         verbose=False,
     )
@@ -124,21 +142,23 @@ def fetch_pvwatts_generation(contract: Contract, year: int) -> GenerationProfile
 
     ac_watts = pd.Series(model.Outputs.ac, dtype=float)
     if len(ac_watts) != 8760:
-        raise ValueError(f"expected 8,760 hourly TMY values from PVWatts, got {len(ac_watts)}")
+        raise ValueError(
+            f"expected 8,760 hourly values from PVWatts, got {len(ac_watts)}"
+        )
 
     # PVWatts' Outputs.ac is instantaneous AC power in watts; over a 1-hour
     # interval that's numerically equal to Wh, so /1e6 converts straight to MWh.
     generation_mwh = ac_watts / 1_000_000.0
-    generation_mwh.index = _tmy_index_for_year(year, utc_offset_hours)
+    generation_mwh.index = _hourly_index_for_year(year, utc_offset_hours)
     generation_mwh.name = "generation_mwh"
 
     # collapse the single spring-forward collision documented in
-    # _tmy_index_for_year -- both rows are TMY's typical value for that
+    # _hourly_index_for_year -- both rows are the same's typical value for that
     # hour anyway, so keeping the first is not a meaningful data loss.
     duplicate_hours = generation_mwh.index.duplicated(keep="first")
     if duplicate_hours.any():
         generation_mwh = generation_mwh[~duplicate_hours]
 
-    store.write_series(generation_mwh, source="generation", key=contract.name, year=year)
+    store.write_series(generation_mwh, source=source, key=contract.name, year=year)
 
     return GenerationProfile(project_name=contract.name, series=generation_mwh)

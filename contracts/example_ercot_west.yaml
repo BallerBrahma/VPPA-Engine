@@ -5,7 +5,10 @@ contract_mw: 150
 term: {start: 2023-01-01, end: 2025-12-31}
 settlement_index: hub             # hub | node
 hub: HB_WEST                      # ERCOT's actual DAM trading hub name
-node: WESTSOLAR_ALL               # settlement point where output is sold
+node: WESTSOLAR_ALL               # ILLUSTRATIVE ONLY -- not a real ERCOT node.
+                                  # This file demonstrates the schema; see
+                                  # lamesa_west / noble_north / sunvalley_central
+                                  # for contracts on real assets with real nodes.
 negative_price_floor: 0.0         # null = no floor
 escalation_pct_yr: 0.0
 project:
