@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
 
-DATA_DIR = Path("data")
+# Anchored to the repo root rather than the cwd. A relative "data" meant the
+# API server, a notebook or a script launched from anywhere but the root would
+# quietly start a second, empty cache and re-download everything into it.
+# src/vppa/store.py -> src/vppa -> src -> repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = Path(os.environ.get("VPPA_DATA_DIR", _REPO_ROOT / "data"))
 
 
 def cache_path(source: str, key: str, year: int) -> Path:

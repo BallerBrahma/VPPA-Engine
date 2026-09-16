@@ -53,7 +53,7 @@ def test_price_series_rejects_naive_timestamps():
     series = pd.Series([10.0, 20.0, 30.0], index=naive_index)
 
     with pytest.raises(ValidationError, match="tz-aware UTC"):
-        PriceSeries(settlement_point="ERCOT_HB_WEST", series=series)
+        PriceSeries(settlement_point="HB_WEST", series=series)
 
 
 def test_price_series_rejects_dst_duplicate_hour():
@@ -64,7 +64,7 @@ def test_price_series_rejects_dst_duplicate_hour():
     series = pd.Series([10.0, 20.0, 20.0], index=index)
 
     with pytest.raises(ValidationError, match="duplicate timestamps"):
-        PriceSeries(settlement_point="ERCOT_HB_WEST", series=series)
+        PriceSeries(settlement_point="HB_WEST", series=series)
 
 
 def test_generation_profile_rejects_negative_values():

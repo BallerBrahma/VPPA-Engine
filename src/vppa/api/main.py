@@ -42,7 +42,8 @@ from vppa.ingest.prices import fetch_ercot_dam_prices, fetch_ercot_hub_dam_price
 from vppa.model import Contract, load_contract
 from vppa.report.statement import monthly_statement
 
-CONTRACTS_DIR = Path("contracts")
+# repo root, not the cwd -- see the note on store.DATA_DIR
+CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "contracts"
 
 SCENARIO_LABELS = {
     "base": "Base case",

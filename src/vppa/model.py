@@ -93,6 +93,7 @@ class ProjectSpec(BaseModel):
     tilt_deg: float
     azimuth_deg: float
     losses_pct: float
+    tracking: Literal["fixed", "single_axis", "single_axis_backtracked"] = "fixed"
 
     @field_validator("lat")
     @classmethod
@@ -135,6 +136,19 @@ class ProjectSpec(BaseModel):
         if v <= 0:
             raise ValueError(f"dc_capacity_mw must be positive, got {v}")
         return v
+
+    @property
+    def array_type(self) -> int:
+        """PVWatts array_type code.
+
+        Mounting is a first-class contract input, not a constant: trackers
+        push output into the evening, which is exactly the shape question
+        this tool exists to answer. Utility-scale single-axis plants almost
+        always backtrack to avoid row-to-row shading at low sun angles, so
+        prefer single_axis_backtracked over the un-backtracked variant unless
+        the plant is known not to.
+        """
+        return {"fixed": 0, "single_axis": 2, "single_axis_backtracked": 3}[self.tracking]
 
 
 class StorageSpec(BaseModel):

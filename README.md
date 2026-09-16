@@ -174,6 +174,13 @@ report/   monthly statements and charts
           +-- api/         FastAPI, consumed by the Next.js app in web/
 ```
 
+Cached generation is keyed by a fingerprint of the modelled plant -- location,
+DC capacity, loading ratio, tilt, azimuth, losses, mounting -- not by contract
+name. Anything the web editor can change that PVWatts reads therefore lands in
+its own partition, so a re-tuned project is re-run rather than silently served
+the previous version's series. Paperwork that PVWatts never sees (the strike,
+the floor) does not move the key, so re-striking a deal still reuses the run.
+
 The engine layer holds every number the project reports and does no I/O, so it
 is testable from small in-memory fixtures with no network. Both front ends are
 deliberately thin: they fetch, align and display, but compute nothing, so the
@@ -224,8 +231,14 @@ These are choices, not facts, and they move the numbers:
 - **Inverter loading ratio 1.30**, set explicitly. PVWatts otherwise defaults to
   1.2 regardless of the project, and the ratio changes capture rate materially by
   clipping midday peaks.
-- **Fixed-tilt, open rack.** Many real ERCOT solar plants use single-axis
-  tracking, which shifts output toward the evening and would raise capture rate.
+- **Fixed-tilt, open rack by default.** Mounting is a contract field
+  (`project.tracking`: `fixed`, `single_axis`, `single_axis_backtracked`), not a
+  hardcoded constant. The shipped contracts stay fixed-tilt so the numbers above
+  stay comparable, but many real ERCOT plants track. Switching Lamesa to
+  backtracked single-axis for 2025 raises annual output 27.6% (233,616 ->
+  298,065 MWh) and capture rate 4.1 points (63.0% -> 67.1%): tracking pushes
+  output into the evening, when prices are higher. It does not rescue the
+  thesis -- 67.1% is still deeply under a time-weighted average.
 - **Prevailing-time alignment.** NSRDB reports weather in fixed standard time;
   ERCOT settles on prevailing local time with DST. Generation is mapped onto the
   region's real DST-observing zone so hours line up with market hours year-round.

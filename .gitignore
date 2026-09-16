@@ -1,7 +1,8 @@
-# Data cache — immutable Parquet, regenerated from ingest/, never committed
-data/**
-!data/prices/.gitkeep
-!data/generation/.gitkeep
+# Data cache — immutable Parquet, regenerated from ingest/, never committed.
+# No .gitkeep placeholders: git cannot re-include a file whose parent directory
+# is excluded, so the negations that used to sit here never applied. store.py
+# creates each partition directory on write, so a fresh clone needs nothing.
+data/
 
 # Python
 __pycache__/

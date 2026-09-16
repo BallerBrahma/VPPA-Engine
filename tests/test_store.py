@@ -9,8 +9,8 @@ def test_write_then_read_round_trip(tmp_path, monkeypatch):
     index = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
     series = pd.Series([1.0, 2.0, 3.0], index=index, name="anything")
 
-    store.write_series(series, source="prices", key="ERCOT_HB_WEST", year=2024)
-    result = store.read_series(source="prices", key="ERCOT_HB_WEST", year=2024)
+    store.write_series(series, source="prices", key="HB_WEST", year=2024)
+    result = store.read_series(source="prices", key="HB_WEST", year=2024)
 
     # Parquet round-trips the index values but not the DatetimeIndex's freq metadata
     pd.testing.assert_series_equal(result, series.rename("value"), check_freq=False)

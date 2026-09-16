@@ -9,6 +9,7 @@ export type ProjectSpec = {
   tilt_deg: number;
   azimuth_deg: number;
   losses_pct: number;
+  tracking: "fixed" | "single_axis" | "single_axis_backtracked";
 };
 
 export type StorageSpec = {

@@ -178,3 +178,31 @@ def test_missing_api_key_surfaces_as_a_400_not_a_500(monkeypatch, contract):
     # missing configuration is a bad request, not a server fault
     assert response.status_code == 400
     assert "NREL_API_KEY" in response.json()["detail"]
+
+
+def test_contract_picker_works_from_any_working_directory(tmp_path, monkeypatch):
+    # CONTRACTS_DIR used to be a bare relative Path("contracts"), so serving
+    # the API from anywhere but the repo root returned an empty picker
+    monkeypatch.chdir(tmp_path)
+
+    response = client.get("/api/contracts")
+
+    assert response.status_code == 200
+    assert {row["file"] for row in response.json()} >= {
+        "lamesa_west.yaml",
+        "noble_north.yaml",
+        "sunvalley_central.yaml",
+    }
+
+
+def test_validate_accepts_a_mounting_choice_and_defaults_to_fixed(example_contract):
+    payload = example_contract.model_dump(mode="json")
+    assert client.post("/api/contracts/validate", json=payload).json()["project"][
+        "tracking"
+    ] == "fixed"
+
+    payload["project"]["tracking"] = "single_axis_backtracked"
+    assert client.post("/api/contracts/validate", json=payload).status_code == 200
+
+    payload["project"]["tracking"] = "dual_axis"
+    assert client.post("/api/contracts/validate", json=payload).status_code == 422

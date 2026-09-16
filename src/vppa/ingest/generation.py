@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
-from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -13,7 +13,42 @@ from vppa.model import Contract, GenerationProfile
 
 load_dotenv()
 
-RESOURCE_CACHE_DIR = Path("data") / "generation" / "_resource_cache"
+
+def _resource_cache_dir():
+    """Resolved at call time off store.DATA_DIR, not bound at import, so
+    redirecting the cache (a test's tmp_path, VPPA_DATA_DIR) moves the
+    downloaded NSRDB files with it instead of stranding them in the cwd."""
+    return store.DATA_DIR / "generation" / "_resource_cache"
+
+
+def _model_fingerprint(contract: Contract) -> str:
+    """Short digest of everything that feeds PVWatts.
+
+    This belongs in the cache key. Caching on the contract name alone means
+    two different plants that happen to share a name collide, and -- the case
+    that actually bites -- editing tilt, capacity or the loading ratio returns
+    the previous run's series unchanged. The web editor makes that a click
+    away, and the failure is silent: plausible numbers for the wrong plant.
+    Note contract_mw is covered via the loading ratio, which PVWatts uses to
+    clip.
+    """
+    inputs = (
+        contract.project.lat,
+        contract.project.lon,
+        contract.project.dc_capacity_mw,
+        contract.inverter_loading_ratio,
+        contract.project.tilt_deg,
+        contract.project.azimuth_deg,
+        contract.project.losses_pct,
+        contract.project.array_type,
+    )
+    return hashlib.sha256(repr(inputs).encode()).hexdigest()[:10]
+
+
+def cache_key(contract: Contract) -> str:
+    """Cache partition name for a contract's generation: readable name plus a
+    fingerprint of the physics, so a re-tuned project gets its own partition."""
+    return f"{contract.name}__{_model_fingerprint(contract)}"
 
 # NSRDB products. The typical-year file is a synthetic composite; the
 # aggregated file is that year's real weather. Both are 8,760 hours with no
@@ -100,7 +135,8 @@ def fetch_pvwatts_generation(
         raise ValueError(f"weather must be 'tmy' or 'actual', got {weather!r}")
 
     source = "generation" if weather == "tmy" else "generation_actual"
-    cached = store.read_series(source=source, key=contract.name, year=year)
+    key = cache_key(contract)
+    cached = store.read_series(source=source, key=key, year=year)
     if cached is not None:
         return GenerationProfile(project_name=contract.name, series=cached)
 
@@ -114,14 +150,15 @@ def fetch_pvwatts_generation(
 
     from PySAM import Pvwattsv8, ResourceTools
 
-    RESOURCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    resource_dir = _resource_cache_dir()
+    resource_dir.mkdir(parents=True, exist_ok=True)
     fetcher = ResourceTools.FetchResourceFiles(
         tech="pv",
         nrel_api_key=api_key,
         nrel_api_email=api_email,
         resource_type=TMY_RESOURCE_TYPE if weather == "tmy" else ACTUAL_RESOURCE_TYPE,
         resource_year="tmy" if weather == "tmy" else str(year),
-        resource_dir=str(RESOURCE_CACHE_DIR),
+        resource_dir=str(resource_dir),
         verbose=False,
     )
     fetcher.fetch([(contract.project.lon, contract.project.lat)])
@@ -137,7 +174,7 @@ def fetch_pvwatts_generation(
     model.SystemDesign.tilt = contract.project.tilt_deg
     model.SystemDesign.azimuth = contract.project.azimuth_deg
     model.SystemDesign.losses = contract.project.losses_pct
-    model.SystemDesign.array_type = 0  # fixed open rack; revisit if a project uses tracking
+    model.SystemDesign.array_type = contract.project.array_type
     model.execute()
 
     ac_watts = pd.Series(model.Outputs.ac, dtype=float)
@@ -153,12 +190,12 @@ def fetch_pvwatts_generation(
     generation_mwh.name = "generation_mwh"
 
     # collapse the single spring-forward collision documented in
-    # _hourly_index_for_year -- both rows are the same's typical value for that
+    # _hourly_index_for_year -- both rows hold the typical value for the same
     # hour anyway, so keeping the first is not a meaningful data loss.
     duplicate_hours = generation_mwh.index.duplicated(keep="first")
     if duplicate_hours.any():
         generation_mwh = generation_mwh[~duplicate_hours]
 
-    store.write_series(generation_mwh, source=source, key=contract.name, year=year)
+    store.write_series(generation_mwh, source=source, key=key, year=year)
 
     return GenerationProfile(project_name=contract.name, series=generation_mwh)

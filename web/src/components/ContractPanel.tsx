@@ -13,6 +13,9 @@ type Field = {
   label: string;
   kind: FieldKind;
   options?: string[];
+  // enum values are wire format, not something to read: a select showing
+  // "single_axis_backtracked" is the variable-name problem all over again
+  optionLabels?: Record<string, string>;
   step?: number;
 };
 
@@ -26,6 +29,7 @@ const GROUPS: { title: string; fields: Field[] }[] = [
         label: "Counterparty view",
         kind: "choice",
         options: ["buyer", "seller"],
+        optionLabels: { buyer: "Buyer (offtaker)", seller: "Seller (generator)" },
       },
       { path: "strike_usd_mwh", label: "Strike ($/MWh)", kind: "number", step: 0.25 },
       { path: "contract_mw", label: "Contract capacity (MW)", kind: "number", step: 1 },
@@ -36,6 +40,7 @@ const GROUPS: { title: string; fields: Field[] }[] = [
         label: "Settles against",
         kind: "choice",
         options: ["hub", "node"],
+        optionLabels: { hub: "Trading hub", node: "Project node" },
       },
       { path: "hub", label: "Hub", kind: "text" },
       { path: "node", label: "Node", kind: "text" },
@@ -62,6 +67,17 @@ const GROUPS: { title: string; fields: Field[] }[] = [
       { path: "project.tilt_deg", label: "Tilt (degrees)", kind: "number", step: 1 },
       { path: "project.azimuth_deg", label: "Azimuth (degrees)", kind: "number", step: 1 },
       { path: "project.losses_pct", label: "Losses (%)", kind: "number", step: 0.5 },
+      {
+        path: "project.tracking",
+        label: "Mounting",
+        kind: "choice",
+        options: ["fixed", "single_axis", "single_axis_backtracked"],
+        optionLabels: {
+          fixed: "Fixed tilt, open rack",
+          single_axis: "Single-axis tracking",
+          single_axis_backtracked: "Single-axis tracking, backtracked",
+        },
+      },
     ],
   },
 ];
@@ -104,9 +120,9 @@ function set(obj: Json, path: string, value: unknown): Json {
   return clone;
 }
 
-function show(value: unknown): string {
+function show(value: unknown, field?: Field): string {
   if (value === null || value === undefined) return "none";
-  return String(value);
+  return field?.optionLabels?.[String(value)] ?? String(value);
 }
 
 function Row({
@@ -135,7 +151,7 @@ function Row({
           >
             {field.options!.map((o) => (
               <option key={o} value={o}>
-                {o}
+                {field.optionLabels?.[o] ?? o}
               </option>
             ))}
           </select>
@@ -196,7 +212,7 @@ function Row({
       <div
         className={`text-sm tabular-nums ${changed ? "text-[var(--series-2)] line-through" : "text-[var(--muted)]"}`}
       >
-        {show(was)}
+        {show(was, field)}
       </div>
       <div className="text-sm">{input()}</div>
     </div>
