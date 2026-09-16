@@ -19,11 +19,16 @@ dependencies = [
     "certifi>=2024.2.2",
     "gridstatusio>=0.16.0",
     "scipy>=1.17.1",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
 ]
 
 [project.optional-dependencies]
-ui = ["streamlit>=1.36"]
-dev = ["pytest>=8.2", "ruff>=0.5"]
+dev = [
+    "httpx2>=2.13.0",
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
 
 [project.scripts]
 vppa = "vppa.cli:app"

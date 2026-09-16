@@ -159,6 +159,28 @@ Round-trip losses are real in the figures: delivered volume is strictly below
 generation (16,627 MWh lost for Sun Valley), so every dollar of uplift comes
 from better price capture rather than from more energy.
 
+## Architecture
+
+Five layers, one direction of flow, with two thin front ends on top:
+
+```
+ingest/   pull prices (gridstatus), generation (PySAM), capacity (EIA)
+store/    immutable Parquet cache, partitioned by source / key / year
+model/    typed domain objects; all validation lives here
+engine/   pure functions: settle, capture_rate, basis, scenarios, dispatch
+report/   monthly statements and charts
+          |
+          +-- cli.py       `vppa settle ...`
+          +-- api/         FastAPI, consumed by the Next.js app in web/
+```
+
+The engine layer holds every number the project reports and does no I/O, so it
+is testable from small in-memory fixtures with no network. Both front ends are
+deliberately thin: they fetch, align and display, but compute nothing, so the
+web UI cannot drift away from what the CLI prints. The API reuses the same
+pydantic `Contract` the CLI loads, so an uploaded or edited deal is validated
+by exactly the same rules.
+
 ## Contract terms that actually bind
 
 Every field in a contract YAML changes a number somewhere; none are decorative:
@@ -249,10 +271,16 @@ These are choices, not facts, and they move the numbers:
 ```bash
 uv sync --extra dev
 cp .env.example .env        # then add your NREL, gridstatus.io and EIA keys
-uv run pytest               # 71 tests, no network required
+uv run pytest               # 84 tests, no network required
 uv run vppa settle contracts/example_ercot_west.yaml --year 2024
 uv run vppa settle contracts/lamesa_west.yaml --year 2025 --weather actual
-uv run streamlit run src/vppa/report/app.py   # interactive front end
+```
+
+For the web interface, run the API and the front end together:
+
+```bash
+uv run uvicorn vppa.api:app --reload --port 8000    # http://localhost:8000/docs
+cd web && npm install && npm run dev                # http://localhost:3000
 ```
 
 The test suite is deliberately offline and deterministic: every number it checks

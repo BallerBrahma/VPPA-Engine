@@ -199,7 +199,8 @@ have a bug.
 | Generation | nrel-pysam | see above |
 | Charts | matplotlib (static) + plotly (interactive) | matplotlib for README figures |
 | CLI | typer | `vppa settle contracts/x.yaml --year 2024` |
-| UI (phase 3) | Streamlit | demoable in an interview |
+| API | FastAPI | reuses the pydantic contract models directly |
+| UI (phase 3) | Next.js + TypeScript | replaced Streamlit, which was too rigid |
 | Tests | pytest | fixtures with hand-computed expected values |
 | Lint / format | ruff | one tool, zero config |
 

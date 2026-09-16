@@ -1,0 +1,100 @@
+// Mirrors the pydantic response models in src/vppa/api/models.py.
+
+export type Term = { start: string; end: string };
+
+export type ProjectSpec = {
+  lat: number;
+  lon: number;
+  dc_capacity_mw: number;
+  tilt_deg: number;
+  azimuth_deg: number;
+  losses_pct: number;
+};
+
+export type StorageSpec = {
+  power_mw: number;
+  duration_hours: number;
+  round_trip_efficiency: number;
+};
+
+export type Contract = {
+  name: string;
+  counterparty_view: "buyer" | "seller";
+  strike_usd_mwh: number;
+  contract_mw: number;
+  term: Term;
+  settlement_index: "hub" | "node";
+  hub: string;
+  node: string;
+  negative_price_floor: number | null;
+  escalation_pct_yr: number;
+  project: ProjectSpec;
+  storage: StorageSpec | null;
+};
+
+export type ContractSummary = { file: string; contract: Contract };
+
+export type AnalysisRequest = {
+  contract: Contract;
+  year: number;
+  settle_at_node?: boolean;
+  weather?: "tmy" | "actual";
+};
+
+export type MonthRow = {
+  month: string;
+  generation_mwh: number;
+  realized_price_usd_mwh: number | null;
+  avg_market_price_usd_mwh: number;
+  cash_to_buyer_usd: number;
+};
+
+export type SettlementResponse = {
+  contract_name: string;
+  year: number;
+  settlement_point: string;
+  counterparty: string;
+  strike_usd_mwh: number;
+  base_strike_usd_mwh: number;
+  capture_rate: number;
+  breakeven_strike_usd_mwh: number;
+  generation_mwh: number;
+  cash_to_counterparty_usd: number;
+  hours: number;
+  in_term: boolean;
+  notes: string[];
+  monthly: MonthRow[];
+};
+
+export type BasisResponse = {
+  cost_of_basis_usd_mwh: number;
+  mean_basis_usd_mwh: number;
+  negative_basis_hours: number;
+  negative_basis_share: number;
+  hours: number;
+  monthly: { month: string; mean_basis_usd_mwh: number }[];
+};
+
+export type ScenarioRow = {
+  scenario: string;
+  label: string;
+  generation_mwh: number;
+  capture_rate: number;
+  breakeven_strike_usd_mwh: number;
+  cash_to_buyer_usd: number;
+};
+
+export type ScenariosResponse = { scenarios: ScenarioRow[] };
+
+export type StorageResponse = {
+  power_mw: number;
+  energy_capacity_mwh: number;
+  round_trip_efficiency: number;
+  capture_rate_base: number;
+  capture_rate_with_storage: number;
+  uplift_points: number;
+  revenue_uplift_usd: number;
+  round_trip_loss_mwh: number;
+  cycles: number;
+  average_day: { hour: number; generation_mwh: number; delivered_mwh: number }[];
+};

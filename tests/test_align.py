@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from vppa.cli import _aligned_price_series
+from vppa.align import align_price_to_generation
 
 
 def _utc(start, periods):
@@ -13,7 +13,7 @@ def test_identical_indexes_pass_through():
     gen = pd.Series(1.0, index=idx)
     price = pd.Series(20.0, index=idx)
 
-    assert _aligned_price_series(gen, price) is price
+    assert align_price_to_generation(gen, price)[0] is price
 
 
 def test_drops_price_hours_generation_cannot_represent():
@@ -23,7 +23,7 @@ def test_drops_price_hours_generation_cannot_represent():
     gen = pd.Series(1.0, index=gen_idx)
     price = pd.Series(range(7), index=price_idx, dtype=float)
 
-    aligned = _aligned_price_series(gen, price)
+    aligned = align_price_to_generation(gen, price)[0]
 
     assert aligned.index.equals(gen_idx)
     assert aligned.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
@@ -34,7 +34,7 @@ def test_raises_when_generation_has_hours_price_lacks():
     price = pd.Series(1.0, index=_utc("2024-06-01", 4))
 
     with pytest.raises(ValueError, match="no matching price data"):
-        _aligned_price_series(gen, price)
+        align_price_to_generation(gen, price)[0]
 
 
 def test_raises_when_indexes_merely_overlap():
@@ -44,4 +44,4 @@ def test_raises_when_indexes_merely_overlap():
     price = pd.Series(1.0, index=_utc("2024-06-01T03:00:00", 5))
 
     with pytest.raises(ValueError, match="no matching price data"):
-        _aligned_price_series(gen, price)
+        align_price_to_generation(gen, price)[0]

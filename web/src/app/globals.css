@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* Chart and surface tokens. The two categorical hues are the first two slots
+   of a palette validated for colour-vision separation and contrast against
+   both surfaces; the dark column is the same hues re-stepped for the dark
+   ground, not an automatic flip. */
+:root {
+  --background: #fcfcfb;
+  --foreground: #0b0b0b;
+  --surface: #ffffff;
+  --border: #e5e4e0;
+  --muted: #52514e;
+  --grid: #e5e4e0;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --positive: #1baf7a;
+  --negative: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #121211;
+    --foreground: #f5f5f3;
+    --surface: #1a1a19;
+    --border: #2e2e2c;
+    --muted: #a3a29b;
+    --grid: #2e2e2c;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --positive: #199e70;
+    --negative: #e66767;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Wide tables scroll inside their own container rather than the page body. */
+.table-scroll {
+  overflow-x: auto;
+}
