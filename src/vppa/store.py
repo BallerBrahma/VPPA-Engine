@@ -59,3 +59,18 @@ def read_frame(source: str, key: str, year: int) -> pd.DataFrame | None:
     if not path.exists():
         return None
     return pd.read_parquet(path)
+
+
+def cached_partitions() -> frozenset[tuple[str, str, int]]:
+    """Every (source, key, year) already on disk.
+
+    Used to tell a fetch that will be instant from one that will take a
+    network round trip -- never to decide whether something is *possible*.
+    """
+    found = set()
+    if not DATA_DIR.is_dir():
+        return frozenset()
+    for path in DATA_DIR.glob("*/*/*.parquet"):
+        if path.stem.isdigit():
+            found.add((path.parent.parent.name, path.parent.name, int(path.stem)))
+    return frozenset(found)

@@ -1,0 +1,35 @@
+# Hypothetical VPPA written on a real asset: Five Wells Solar Center, Bell
+# County TX. Plant identity, location, AC capacity and commercial operation
+# date are from EIA-860; the node is ERCOT's own resource-node registry. The
+# strike and contract terms are illustrative, not a real deal.
+#
+# The largest project in this set, and a genuine AC-coupled hybrid -- the
+# storage block below is a real paired battery, not the "what if" overlay the
+# older contracts carry.
+name: five_wells_solar_north
+display_name: Five Wells Solar Center
+counterparty_view: buyer
+strike_usd_mwh: 30.00
+contract_mw: 355.4
+term: {start: 2024-01-01, end: 2033-12-31}
+settlement_index: hub
+hub: HB_NORTH
+node: FIVEWSLR_ALL
+negative_price_floor: 0.0
+escalation_pct_yr: 2.0
+project:
+  lat: 30.999
+  lon: -97.259
+  dc_capacity_mw: 462.0           # ILR 1.30
+  tilt_deg: 25
+  azimuth_deg: 180
+  losses_pct: 14
+  tracking: single_axis_backtracked
+  county: Bell
+  state: TX
+  eia_plant_id: 66420
+  commercial_operation: 2023-12-01
+storage:
+  power_mw: 89
+  duration_hours: 4
+  round_trip_efficiency: 0.85

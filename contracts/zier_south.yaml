@@ -1,0 +1,29 @@
+# Hypothetical VPPA written on a real asset: Zier Solar, Kinney County TX.
+# The first South-zone project in this set: a different congestion regime from
+# the West Texas and North Texas contracts, and the reason its basis is worth
+# comparing against theirs. Plant identity, location, AC capacity and
+# commercial operation date are from EIA-860; the node is from ERCOT's
+# resource-node registry. Strike and terms are illustrative.
+name: zier_solar_south
+display_name: Zier Solar
+counterparty_view: buyer
+strike_usd_mwh: 33.00
+contract_mw: 160
+term: {start: 2025-01-01, end: 2034-12-31}
+settlement_index: hub
+hub: HB_SOUTH
+node: ZIER_SLR_ALL
+negative_price_floor: 0.0
+escalation_pct_yr: 0.0
+project:
+  lat: 29.351
+  lon: -100.562
+  dc_capacity_mw: 208.0           # ILR 1.30
+  tilt_deg: 25
+  azimuth_deg: 180
+  losses_pct: 14
+  tracking: single_axis_backtracked
+  county: Kinney
+  state: TX
+  eia_plant_id: 66137
+  commercial_operation: 2024-04-01

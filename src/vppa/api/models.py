@@ -25,7 +25,53 @@ class AnalysisRequest(BaseModel):
 
 
 class ContractSummary(BaseModel):
+    """A contract plus the handful of derived facts the picker shows on a card,
+    computed server-side so the browser never re-derives a number."""
+
     file: str
+    contract: Contract
+    label: str
+    location: str | None
+    zone: str | None
+    contract_mw: float
+    tracking: str
+    has_storage: bool
+    storage_mw: float | None
+    term_start: str
+    term_end: str
+    settles_at: str
+    settlement_point: str
+    commercial_operation: str | None
+
+
+class OptionAvailability(BaseModel):
+    """Whether one control can be used, and -- when it cannot -- why, in words
+    meant for the person looking at the greyed-out control."""
+
+    available: bool
+    cached: bool = False
+    reason: str | None = None
+
+
+class YearAvailabilityRow(BaseModel):
+    year: int
+    in_term: bool
+    analysis: OptionAvailability
+    actual_weather: OptionAvailability
+    node_settlement: OptionAvailability
+
+
+class AvailabilityResponse(BaseModel):
+    """What this contract can actually be run against, decided before any
+    fetch so the UI can disable a control instead of failing an analysis."""
+
+    contract_name: str
+    default_year: int | None
+    storage: OptionAvailability
+    years: list[YearAvailabilityRow]
+
+
+class AvailabilityRequest(BaseModel):
     contract: Contract
 
 

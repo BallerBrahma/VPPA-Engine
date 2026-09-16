@@ -14,19 +14,25 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from vppa import store
 from vppa.align import align_price_to_generation, trim_to_year
 from vppa.api.models import (
     AnalysisRequest,
+    AvailabilityRequest,
+    AvailabilityResponse,
     BasisMonthRow,
     BasisResponse,
     ContractSummary,
     HourRow,
     MonthRow,
+    OptionAvailability,
     ScenarioRow,
     ScenariosResponse,
     SettlementResponse,
     StorageResponse,
+    YearAvailabilityRow,
 )
+from vppa.availability import offered_years, year_availability
 from vppa.engine.dispatch import dispatch, storage_uplift
 from vppa.engine.metrics import (
     basis,
@@ -39,6 +45,7 @@ from vppa.engine.scenarios import run_scenarios
 from vppa.engine.settlement import settle
 from vppa.ingest.generation import fetch_pvwatts_generation
 from vppa.ingest.prices import fetch_ercot_dam_prices, fetch_ercot_hub_dam_prices
+from vppa.ingest.settlement_points import fetch_settlement_points, known_nodes
 from vppa.model import Contract, load_contract
 from vppa.report.statement import monthly_statement
 
@@ -105,6 +112,92 @@ def _resolve(request: AnalysisRequest):
     return contract, generation, index_price.loc[index], hub, node, notes
 
 
+def _node_zones() -> dict[str, str]:
+    """node -> ERCOT load zone, or {} if the registry has never been pulled.
+
+    A missing registry degrades the cards (no zone badge) and makes the node
+    check permissive; it must never take the picker down.
+    """
+    try:
+        registry = fetch_settlement_points()
+    except Exception:  # noqa: BLE001 -- offline is a normal state here
+        return {}
+    return dict(zip(registry["node"], registry["zone"], strict=False))
+
+
+def _summarise(file: str, contract: Contract, zones: dict[str, str]) -> ContractSummary:
+    return ContractSummary(
+        file=file,
+        contract=contract,
+        label=contract.label,
+        location=contract.location_label,
+        zone=zones.get(contract.node),
+        contract_mw=contract.contract_mw,
+        tracking=contract.project.tracking,
+        has_storage=contract.storage is not None,
+        storage_mw=contract.storage.power_mw if contract.storage else None,
+        term_start=contract.term.start.isoformat(),
+        term_end=contract.term.end.isoformat(),
+        settles_at=contract.settlement_index,
+        settlement_point=contract.settlement_point,
+        commercial_operation=(
+            contract.project.commercial_operation.isoformat()
+            if contract.project.commercial_operation
+            else None
+        ),
+    )
+
+
+def _as_option(option) -> OptionAvailability:
+    return OptionAvailability(
+        available=option.available, cached=option.cached, reason=option.reason
+    )
+
+
+@app.post("/api/availability", response_model=AvailabilityResponse)
+def availability(request: AvailabilityRequest) -> AvailabilityResponse:
+    """What this contract supports, per year, before anything is fetched.
+
+    The UI disables controls from this rather than letting a run fail: a node
+    that is not in ERCOT's registry, a year the plant predates, and weather
+    NSRDB has not published yet are all knowable for free.
+    """
+    contract = request.contract
+    # known_nodes() returns an empty set rather than raising when the registry
+    # is unreachable, and an empty set is permissive by design
+    nodes = known_nodes()
+    cached = store.cached_partitions()
+
+    rows = [
+        year_availability(contract, year, known_nodes=nodes, cached=cached)
+        for year in offered_years()
+    ]
+    runnable = [r for r in rows if r.analysis.available]
+    in_term = [r for r in runnable if r.in_term]
+    default = (in_term or runnable)[0].year if runnable else None
+
+    return AvailabilityResponse(
+        contract_name=contract.name,
+        default_year=default,
+        storage=OptionAvailability(
+            available=contract.storage is not None,
+            reason=None
+            if contract.storage
+            else "This contract has no paired battery to dispatch",
+        ),
+        years=[
+            YearAvailabilityRow(
+                year=row.year,
+                in_term=row.in_term,
+                analysis=_as_option(row.analysis),
+                actual_weather=_as_option(row.actual_weather),
+                node_settlement=_as_option(row.node_settlement),
+            )
+            for row in rows
+        ],
+    )
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -115,12 +208,11 @@ def list_contracts() -> list[ContractSummary]:
     """Contracts shipped in the repo, for the picker."""
     if not CONTRACTS_DIR.is_dir():
         return []
+    zones = _node_zones()
     summaries = []
     for path in sorted(CONTRACTS_DIR.glob("*.yaml")):
         try:
-            summaries.append(
-                ContractSummary(file=path.name, contract=load_contract(path))
-            )
+            summaries.append(_summarise(path.name, load_contract(path), zones))
         except (yaml.YAMLError, ValueError) as exc:
             # a malformed file on disk shouldn't take the whole picker down
             raise HTTPException(

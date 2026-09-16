@@ -95,6 +95,15 @@ class ProjectSpec(BaseModel):
     losses_pct: float
     tracking: Literal["fixed", "single_axis", "single_axis_backtracked"] = "fixed"
 
+    # Provenance and siting. None of these reach PVWatts -- they identify the
+    # real asset behind the contract and let the picker say where a project is
+    # without the reader decoding a node name. Deliberately absent from the
+    # generation cache fingerprint for that reason.
+    county: str | None = None
+    state: str | None = None
+    eia_plant_id: int | None = None
+    commercial_operation: dt.date | None = None
+
     @field_validator("lat")
     @classmethod
     def _valid_lat(cls, v: float) -> float:
@@ -191,6 +200,10 @@ class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    # `name` is a machine key: it lands in cache paths and CLI arguments, so it
+    # stays lowercase and punctuation-free. Anything a person reads comes from
+    # display_name.
+    display_name: str | None = None
     counterparty_view: Literal["buyer", "seller"]
     strike_usd_mwh: float
     contract_mw: float
@@ -220,6 +233,24 @@ class Contract(BaseModel):
     def settlement_point(self) -> str:
         """The price point this contract's output actually settles against."""
         return self.hub if self.settlement_index == "hub" else self.node
+
+    @property
+    def label(self) -> str:
+        """What a person should see. Falls back to title-casing the machine
+        key so a contract without a display_name still reads as English."""
+        if self.display_name:
+            return self.display_name
+        return self.name.replace("_", " ").title()
+
+    @property
+    def location_label(self) -> str | None:
+        """"Dawson County, TX" -- or whatever subset of that is known."""
+        parts = [
+            f"{self.project.county} County" if self.project.county else None,
+            self.project.state,
+        ]
+        known = [p for p in parts if p]
+        return ", ".join(known) if known else None
 
     @property
     def counterparty_sign(self) -> int:

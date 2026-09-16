@@ -1,3 +1,5 @@
+import datetime as dt
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
@@ -235,3 +237,18 @@ def test_tracking_rejects_an_unknown_mounting(example_contract):
 
     with pytest.raises(ValidationError):
         Contract.model_validate(payload)
+
+
+def test_provenance_fields_do_not_change_the_generation_fingerprint(example_contract):
+    # county, EIA id and commercial operation date identify the real asset but
+    # never reach PVWatts. If they entered the key, documenting a project would
+    # orphan its cache and silently trigger a re-fetch.
+    payload = example_contract.model_dump()
+    payload["display_name"] = "Some Solar Farm"
+    payload["project"].update(
+        county="Dawson", state="TX", eia_plant_id=60372,
+        commercial_operation=dt.date(2017, 4, 1),
+    )
+    documented = Contract.model_validate(payload)
+
+    assert cache_key(documented) == cache_key(example_contract)

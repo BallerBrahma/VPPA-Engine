@@ -1,6 +1,8 @@
 import type {
   AnalysisRequest,
+  AvailabilityResponse,
   BasisResponse,
+  Contract,
   ContractSummary,
   ScenariosResponse,
   SettlementResponse,
@@ -44,7 +46,7 @@ async function unwrap(response: Response) {
   throw new ApiError(detail, response.status);
 }
 
-function post(path: string, body: AnalysisRequest) {
+function post(path: string, body: unknown) {
   return fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -62,4 +64,6 @@ export const api = {
     post("/api/scenarios", r),
   storage: (r: AnalysisRequest): Promise<StorageResponse> =>
     post("/api/storage", r),
+  availability: (contract: Contract): Promise<AvailabilityResponse> =>
+    post("/api/availability", { contract }),
 };

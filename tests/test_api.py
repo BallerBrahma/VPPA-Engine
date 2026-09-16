@@ -8,6 +8,27 @@ from vppa.model import GenerationProfile, PriceSeries
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def no_registry_network(monkeypatch):
+    """Stub ERCOT's settlement-point registry for every test in this module.
+
+    /api/contracts and /api/availability both consult it, and on a machine with
+    no cached copy (CI) that is a live call to ercot.com. Both call sites
+    already degrade gracefully, but the degradation costs a network timeout
+    first, which is not something the suite should ever wait on.
+    """
+    nodes = {"HB_WEST", "LAMESASLR_G", "NOBLESLR_ALL", "SUNVASLR_ALL",
+             "EIFSLR_UNIT1", "FIVEWSLR_ALL", "ZIER_SLR_ALL", "STAR_SLR_RN"}
+    monkeypatch.setattr("vppa.api.main.known_nodes", lambda *a, **k: nodes)
+    monkeypatch.setattr(
+        "vppa.api.main.fetch_settlement_points",
+        lambda *a, **k: pd.DataFrame(
+            {"node": sorted(nodes), "zone": ["LZ_WEST"] * len(nodes),
+             "substation": [""] * len(nodes)}
+        ),
+    )
+
+
 @pytest.fixture
 def offline(monkeypatch):
     """Patch ingest so the API is exercised without network or API keys."""
@@ -206,3 +227,49 @@ def test_validate_accepts_a_mounting_choice_and_defaults_to_fixed(example_contra
 
     payload["project"]["tracking"] = "dual_axis"
     assert client.post("/api/contracts/validate", json=payload).status_code == 422
+
+
+def test_contract_summaries_carry_what_the_picker_shows(offline):
+    rows = client.get("/api/contracts").json()
+    lamesa = next(r for r in rows if r["file"] == "lamesa_west.yaml")
+
+    assert lamesa["label"] == "Lamesa Solar"
+    assert lamesa["location"] == "Dawson County, TX"
+    assert lamesa["contract_mw"] == 102
+    assert lamesa["has_storage"] is True
+    assert lamesa["settlement_point"] == "HB_WEST"
+    assert lamesa["commercial_operation"] == "2017-04-01"
+
+
+def test_a_contract_without_provenance_still_summarises(offline):
+    rows = client.get("/api/contracts").json()
+    demo = next(r for r in rows if r["file"] == "example_ercot_west.yaml")
+
+    assert demo["location"] is None
+    assert demo["label"] == "Example deal (schema demo)"
+
+
+def test_availability_reports_a_runnable_default_year(example_contract):
+    body = client.post(
+        "/api/availability", json={"contract": example_contract.model_dump(mode="json")}
+    ).json()
+
+    assert body["default_year"] in {row["year"] for row in body["years"]}
+    default = next(r for r in body["years"] if r["year"] == body["default_year"])
+    assert default["analysis"]["available"]
+
+
+def test_availability_marks_a_contract_without_a_battery(example_contract):
+    body = client.post(
+        "/api/availability", json={"contract": example_contract.model_dump(mode="json")}
+    ).json()
+
+    assert body["storage"]["available"] is False
+    assert "no paired battery" in body["storage"]["reason"]
+
+    with_battery = example_contract.model_dump(mode="json")
+    with_battery["storage"] = {
+        "power_mw": 50, "duration_hours": 4, "round_trip_efficiency": 0.85
+    }
+    body = client.post("/api/availability", json={"contract": with_battery}).json()
+    assert body["storage"]["available"] is True

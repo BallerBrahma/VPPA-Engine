@@ -77,6 +77,11 @@ def fetch_ercot_dam_prices(location: str, year: int) -> PriceSeries:
             "nodal prices -- see https://www.gridstatus.io/"
         )
 
+    # Importing gridstatusio runs a PyPI version check with no timeout, so a
+    # slow pypi.org would stall a price fetch indefinitely. The library
+    # provides this opt-out; we want the data, not the upgrade notice.
+    os.environ.setdefault("GSIO_SKIP_VERSION_CHECK", "true")
+
     from gridstatusio import GridStatusClient
 
     raw = GridStatusClient(api_key=api_key).get_dataset(

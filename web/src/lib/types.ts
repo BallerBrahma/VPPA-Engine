@@ -10,6 +10,10 @@ export type ProjectSpec = {
   azimuth_deg: number;
   losses_pct: number;
   tracking: "fixed" | "single_axis" | "single_axis_backtracked";
+  county: string | null;
+  state: string | null;
+  eia_plant_id: number | null;
+  commercial_operation: string | null;
 };
 
 export type StorageSpec = {
@@ -20,6 +24,7 @@ export type StorageSpec = {
 
 export type Contract = {
   name: string;
+  display_name: string | null;
   counterparty_view: "buyer" | "seller";
   strike_usd_mwh: number;
   contract_mw: number;
@@ -33,7 +38,46 @@ export type Contract = {
   storage: StorageSpec | null;
 };
 
-export type ContractSummary = { file: string; contract: Contract };
+export type ContractSummary = {
+  file: string;
+  contract: Contract;
+  label: string;
+  location: string | null;
+  zone: string | null;
+  contract_mw: number;
+  tracking: ProjectSpec["tracking"];
+  has_storage: boolean;
+  storage_mw: number | null;
+  term_start: string;
+  term_end: string;
+  settles_at: "hub" | "node";
+  settlement_point: string;
+  commercial_operation: string | null;
+};
+
+/** Whether one control can be used, and why not when it cannot. `cached` only
+ *  means "already on disk, so instant" — an uncached option is slower, never
+ *  unavailable. */
+export type OptionAvailability = {
+  available: boolean;
+  cached: boolean;
+  reason: string | null;
+};
+
+export type YearAvailabilityRow = {
+  year: number;
+  in_term: boolean;
+  analysis: OptionAvailability;
+  actual_weather: OptionAvailability;
+  node_settlement: OptionAvailability;
+};
+
+export type AvailabilityResponse = {
+  contract_name: string;
+  default_year: number | null;
+  storage: OptionAvailability;
+  years: YearAvailabilityRow[];
+};
 
 export type AnalysisRequest = {
   contract: Contract;

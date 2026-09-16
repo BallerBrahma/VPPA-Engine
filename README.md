@@ -188,6 +188,82 @@ web UI cannot drift away from what the CLI prints. The API reuses the same
 pydantic `Contract` the CLI loads, so an uploaded or edited deal is validated
 by exactly the same rules.
 
+## The contracts
+
+Seven hypothetical deals on real ERCOT assets, plus one schema demo. Plant
+identity, location, AC capacity and commercial operation date come from
+EIA-860; every settlement point is checked against ERCOT's own resource-node
+registry. Strikes and terms are illustrative.
+
+| Project | MW | Region | Node | Mounting | Battery | Online |
+|---|---:|---|---|---|---|---|
+| Five Wells Solar Center | 355.4 | North | `FIVEWSLR_ALL` | tracking | 89 MW | Dec 2023 |
+| Noble Solar | 275.0 | North | `NOBLESLR_ALL` | fixed | 69 MW | Sep 2022 |
+| Sun Valley Solar | 250.0 | North | `SUNVASLR_ALL` | fixed | 62 MW | Dec 2022 |
+| Eiffel Solar | 240.0 | North | `EIFSLR_UNIT1` | tracking | — | Nov 2023 |
+| Zier Solar | 160.0 | South | `ZIER_SLR_ALL` | tracking | — | Apr 2024 |
+| Starr Solar Ranch | 136.0 | South | `STAR_SLR_RN` | tracking | — | Nov 2024 |
+| Lamesa Solar | 102.0 | West | `LAMESASLR_G` | fixed | 25 MW | Apr 2017 |
+| Example deal | 150.0 | — | fictional | fixed | — | — |
+
+Five Wells is a genuine AC-coupled hybrid, so its battery is a real paired
+asset rather than the "what if" overlay the older contracts carry. The example
+deal's node is deliberately fictional, which is what makes it the contract
+that exercises the availability check below.
+
+### What seven projects show that three did not
+
+Hub-settled, typical weather, 2025. The breakeven strike is the strike at which
+each deal settles to exactly zero -- it is computed from the price shape, not
+chosen, so unlike the illustrative strikes it is a real result.
+
+| Project | Region | Mounting | Capture rate | Breakeven strike |
+|---|---|---|---:|---:|
+| Zier Solar | South | tracking | 77.6% | $25.50 |
+| Starr Solar Ranch | South | tracking | 75.9% | $24.93 |
+| Five Wells Solar Center | North | tracking | 75.1% | $24.73 |
+| Eiffel Solar | North | tracking | 73.8% | $24.31 |
+| Sun Valley Solar | North | fixed | 70.8% | $23.33 |
+| Noble Solar | North | fixed | 70.3% | $23.15 |
+| Lamesa Solar | West | fixed | 63.0% | $21.64 |
+
+Two things fall out that three West/North projects could not show. First, the
+ordering is South > North > West, and West is worst by a wide margin -- the
+zone carrying ERCOT's heaviest solar concentration is the one where solar
+earns least, which is the thesis expressed geographically rather than over
+time. Second, the four North-zone projects settle against the same hub in the
+same year, so mounting is the only thing separating them: the two tracking
+plants capture 73.8-75.1% against 70.3-70.8% for the two fixed-tilt ones. That
++3 to +5 point gap is measured on different hardware at different sites, and it
+independently reproduces the +4.1 points found by re-running Lamesa itself as a
+tracker.
+
+No project clears 78%, and every breakeven strike lands between $21.64 and
+$25.50/MWh. A deal struck against a time-weighted forward is above that band
+before basis, before curtailment, and before any of it is negotiated.
+
+## Knowing what can be run before running it
+
+Not every contract-year is answerable, and the old UI found that out the
+expensive way: it offered every combination, then failed the analysis with a
+traceback. Three of those questions have free answers, so `/api/availability`
+answers them up front and the UI disables the control instead:
+
+- **Is this a real settlement point?** ERCOT publishes its resource-node list,
+  and `ingest/settlement_points.py` caches it. The example deal's
+  `WESTSOLAR_ALL` is not in it, so node settlement is greyed out with that
+  reason rather than burning a metered nodal query to discover it.
+- **Did the plant exist yet?** Nodal prices start at commercial operation.
+  Starr Solar Ranch energised in November 2024, so 2023 is refused and 2024 is
+  offered but labelled a partial year.
+- **Has the weather been published?** NSRDB lags by about a year, so actual
+  weather for an incomplete year is not offered.
+
+Both registry reports come from ERCOT's free public MIS, not the metered
+gridstatus.io API, so refreshing the list costs nothing. A machine that has
+never pulled it degrades to permissive -- an absent registry must not make
+every node look fake.
+
 ## Contract terms that actually bind
 
 Every field in a contract YAML changes a number somewhere; none are decorative:

@@ -2,6 +2,7 @@
 # Plant identity, location and AC capacity are from EIA-860; the strike and
 # contract terms are illustrative, not a real deal.
 name: lamesa_solar_west
+display_name: Lamesa Solar
 counterparty_view: buyer
 strike_usd_mwh: 32.00
 contract_mw: 102
@@ -18,6 +19,10 @@ project:
   tilt_deg: 25
   azimuth_deg: 180
   losses_pct: 14
+  county: Dawson
+  state: TX
+  eia_plant_id: 60372
+  commercial_operation: 2017-04-01
 storage:                          # Phase 4 overlay: 4-hour battery at ~25% of AC
   power_mw: 25
   duration_hours: 4

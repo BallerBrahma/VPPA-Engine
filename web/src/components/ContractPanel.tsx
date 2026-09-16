@@ -1,10 +1,34 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Contract, ContractSummary } from "@/lib/types";
+import type {
+  AvailabilityResponse,
+  Contract,
+  ContractSummary,
+  OptionAvailability,
+} from "@/lib/types";
+import { ContractBrowser } from "./ContractBrowser";
 import { Note } from "./ui";
 
 type Source = "built-in" | "upload" | "edit";
+
+const SOURCE_LABEL: Record<Source, string> = {
+  "built-in": "Browse contracts",
+  upload: "Upload a contract",
+  edit: "Edit fields",
+};
+
+/** A control the data cannot support, with the reason in place of the control.
+ *  Disabling without saying why is the same dead end as the error it replaces,
+ *  just quieter. */
+function Unavailable({ children }: { children: React.ReactNode }) {
+  return <span className="text-xs text-[var(--muted)]">{children}</span>;
+}
+
+function speed(option: OptionAvailability | undefined): string {
+  if (!option?.available) return "";
+  return option.cached ? "cached" : "will fetch";
+}
 
 type FieldKind = "text" | "number" | "choice" | "date" | "optional-number";
 
@@ -229,6 +253,7 @@ export function ContractPanel({
   onSettleAtNode,
   weather,
   onWeather,
+  availability,
 }: {
   contracts: ContractSummary[];
   contract: Contract | null;
@@ -239,14 +264,29 @@ export function ContractPanel({
   onSettleAtNode: (v: boolean) => void;
   weather: "tmy" | "actual";
   onWeather: (w: "tmy" | "actual") => void;
+  availability: AvailabilityResponse | null;
 }) {
+  const OPEN: OptionAvailability = { available: true, cached: false, reason: null };
+
+  // until availability lands, nothing is claimed unavailable -- a control that
+  // flickers to disabled is worse than one that briefly allows a retry
+  const years = availability?.years ?? [];
+  const current = years.find((row) => row.year === year);
+  const actualWeather = current?.actual_weather ?? OPEN;
+  const nodeSettlement = current?.node_settlement ?? OPEN;
+  const storage = availability?.storage ?? OPEN;
+
   const [source, setSource] = useState<Source>("built-in");
   const [baseFile, setBaseFile] = useState<string>("");
+  // page.tsx selects the first contract on load, so mirror that as a derived
+  // default rather than syncing it into state -- a card is highlighted from
+  // the first paint and there is no effect to get out of step
+  const selectedFile = baseFile || contracts[0]?.file || "";
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const original = useMemo(
-    () => contracts.find((c) => c.file === baseFile)?.contract ?? null,
-    [contracts, baseFile],
+    () => contracts.find((c) => c.file === selectedFile)?.contract ?? null,
+    [contracts, selectedFile],
   );
 
   const changedFields = useMemo(() => {
@@ -279,72 +319,74 @@ export function ContractPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="text-sm">
-          <span className="mb-1 block text-[var(--muted)]">Contract source</span>
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value as Source)}
-            className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5"
+      <div className="flex flex-wrap gap-1 border-b border-[var(--border)]">
+        {(Object.keys(SOURCE_LABEL) as Source[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSource(key)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+              source === key
+                ? "border-[var(--series-1)] font-medium"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
           >
-            <option value="built-in">Built-in</option>
-            <option value="upload">Upload JSON</option>
-            <option value="edit">Edit fields</option>
-          </select>
+            {SOURCE_LABEL[key]}
+          </button>
+        ))}
+      </div>
+
+      {(source === "built-in" || source === "edit") && (
+        <ContractBrowser
+          contracts={contracts}
+          selected={selectedFile}
+          onSelect={pick}
+        />
+      )}
+
+      {source === "upload" && (
+        <label className="block text-sm">
+          <span className="mb-1 block text-[var(--muted)]">
+            Contract JSON — the same shape the API validates
+          </span>
+          <input
+            type="file"
+            accept=".json,application/json"
+            className="text-sm"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                onContract(JSON.parse(await file.text()));
+                setUploadError(null);
+              } catch (err) {
+                setUploadError(
+                  err instanceof Error ? err.message : "Could not read that file",
+                );
+              }
+            }}
+          />
         </label>
+      )}
 
-        {(source === "built-in" || source === "edit") && (
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">
-              {source === "edit" ? "Start from" : "Contract"}
-            </span>
-            <select
-              value={baseFile}
-              onChange={(e) => pick(e.target.value)}
-              className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5"
-            >
-              {contracts.map((c) => (
-                <option key={c.file} value={c.file}>
-                  {c.contract.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+      {uploadError && <Note tone="error">{uploadError}</Note>}
 
-        {source === "upload" && (
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Contract JSON</span>
-            <input
-              type="file"
-              accept=".json,application/json"
-              className="text-sm"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  onContract(JSON.parse(await file.text()));
-                  setUploadError(null);
-                } catch (err) {
-                  setUploadError(
-                    err instanceof Error ? err.message : "Could not read that file",
-                  );
-                }
-              }}
-            />
-          </label>
-        )}
-
+      <div className="flex flex-wrap items-start gap-6 rounded-lg border border-[var(--border)] p-4">
         <label className="text-sm">
-          <span className="mb-1 block text-[var(--muted)]">Year</span>
+          <span className="mb-1 block text-[var(--muted)]">Settlement year</span>
           <select
             value={year}
             onChange={(e) => onYear(Number(e.target.value))}
             className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5"
           >
-            {[2025, 2024, 2023].map((y) => (
-              <option key={y} value={y}>
-                {y}
+            {years.map((row) => (
+              <option key={row.year} value={row.year} disabled={!row.analysis.available}>
+                {row.year}
+                {row.analysis.available
+                  ? row.in_term
+                    ? ""
+                    : " — outside term"
+                  : ` — ${row.analysis.reason}`}
               </option>
             ))}
           </select>
@@ -358,21 +400,57 @@ export function ContractPanel({
             className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5"
           >
             <option value="tmy">Typical year (TMY)</option>
-            <option value="actual">Actual weather</option>
+            <option value="actual" disabled={!actualWeather.available}>
+              Actual weather
+              {actualWeather.available ? "" : " — unavailable"}
+            </option>
           </select>
+          <span className="mt-1 block">
+            {actualWeather.available ? (
+              <Unavailable>
+                Actual {year} weather — {speed(actualWeather)}
+              </Unavailable>
+            ) : (
+              <Unavailable>{actualWeather.reason}</Unavailable>
+            )}
+          </span>
         </label>
 
-        <label className="flex items-center gap-2 pb-1.5 text-sm">
-          <input
-            type="checkbox"
-            checked={settleAtNode}
-            onChange={(e) => onSettleAtNode(e.target.checked)}
-          />
-          Settle at node
-        </label>
+        <div className="text-sm">
+          <span className="mb-1 block text-[var(--muted)]">Settlement point</span>
+          <label
+            className={`flex items-center gap-2 ${
+              nodeSettlement.available ? "" : "opacity-50"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={settleAtNode && nodeSettlement.available}
+              disabled={!nodeSettlement.available}
+              onChange={(e) => onSettleAtNode(e.target.checked)}
+            />
+            Settle at the project node
+          </label>
+          <span className="mt-1 block">
+            <Unavailable>
+              {nodeSettlement.reason ??
+                (nodeSettlement.available
+                  ? `Nodal prices — ${speed(nodeSettlement)}`
+                  : "")}
+            </Unavailable>
+          </span>
+        </div>
+
+        {!storage.available && (
+          <div className="text-sm">
+            <span className="mb-1 block text-[var(--muted)]">Battery</span>
+            <span className="opacity-50">Storage tab off</span>
+            <span className="mt-1 block">
+              <Unavailable>{storage.reason}</Unavailable>
+            </span>
+          </div>
+        )}
       </div>
-
-      {uploadError && <Note tone="error">{uploadError}</Note>}
 
       {source === "edit" && contract && original && (
         <div className="rounded-lg border border-[var(--border)] p-4">

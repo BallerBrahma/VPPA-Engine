@@ -1,4 +1,5 @@
 name: ercot_west_solar_150mw
+display_name: Example deal (schema demo)
 counterparty_view: buyer          # buyer | seller
 strike_usd_mwh: 34.50
 contract_mw: 150

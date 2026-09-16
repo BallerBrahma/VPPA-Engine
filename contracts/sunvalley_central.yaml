@@ -2,6 +2,7 @@
 # Plant identity, location and AC capacity are from EIA-860; the strike and
 # contract terms are illustrative, not a real deal.
 name: sun_valley_solar_central
+display_name: Sun Valley Solar Project
 counterparty_view: buyer
 strike_usd_mwh: 32.00
 contract_mw: 250
@@ -18,6 +19,10 @@ project:
   tilt_deg: 26
   azimuth_deg: 180
   losses_pct: 14
+  county: Hill
+  state: TX
+  eia_plant_id: 65303
+  commercial_operation: 2022-12-01
 storage:                          # Phase 4 overlay: 4-hour battery at ~25% of AC
   power_mw: 62
   duration_hours: 4

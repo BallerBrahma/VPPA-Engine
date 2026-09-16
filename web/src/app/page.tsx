@@ -8,6 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { mwh, pct, usd, usdCompact } from "@/lib/format";
 import type {
   AnalysisRequest,
+  AvailabilityResponse,
   BasisResponse,
   Contract,
   ContractSummary,
@@ -25,6 +26,7 @@ export default function Home() {
   const [year, setYear] = useState(2025);
   const [settleAtNode, setSettleAtNode] = useState(false);
   const [weather, setWeather] = useState<"tmy" | "actual">("tmy");
+  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
 
   const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
   const [basis, setBasis] = useState<BasisResponse | null>(null);
@@ -45,10 +47,41 @@ export default function Home() {
       })
       .catch((e) =>
         setError(
-          `${message(e)} — is the API running? Start it with: PYTHONPATH=src uv run uvicorn vppa.api:app --port 8000`,
+          `${message(e)} — is the API running? Start it with: uv run uvicorn vppa.api.main:app --port 8000`,
         ),
       );
   }, []);
+
+  // Ask what this contract supports before offering it. Controls the data
+  // cannot back are disabled with a reason rather than failing a run, so the
+  // request that goes out is always one the server can answer.
+  useEffect(() => {
+    if (!contract) return;
+    let stale = false;
+    api
+      .availability(contract)
+      .then((next) => {
+        if (stale) return;
+        setAvailability(next);
+
+        const row = next.years.find((y) => y.year === year);
+        if (!row?.analysis.available && next.default_year) setYear(next.default_year);
+        if (row && !row.actual_weather.available) setWeather("tmy");
+        if (row && !row.node_settlement.available) setSettleAtNode(false);
+      })
+      .catch(() => {
+        // availability is an optimisation, not a gate: if it fails, leave every
+        // control enabled and let the analysis report its own errors
+        if (!stale) setAvailability(null);
+      });
+    return () => {
+      stale = true;
+    };
+    // `year` is deliberately excluded: this re-checks when the contract or the
+    // offered years change, and clamping year here would fight the user's own
+    // selection on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract]);
 
   const run = useCallback(async () => {
     if (!contract) return;
@@ -112,6 +145,7 @@ export default function Home() {
           onSettleAtNode={setSettleAtNode}
           weather={weather}
           onWeather={setWeather}
+          availability={availability}
         />
         <div className="mt-5 flex items-center gap-4">
           <button
@@ -139,8 +173,8 @@ export default function Home() {
       {settlement && !loading && (
         <>
           <h2 className="mb-4 text-lg font-medium">
-            {settlement.contract_name} — {settlement.year}, settled at{" "}
-            {settlement.settlement_point}
+            {contract?.display_name ?? settlement.contract_name} — {settlement.year},
+            settled at {settlement.settlement_point}
           </h2>
 
           <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
