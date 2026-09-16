@@ -54,8 +54,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # `next typegen` first: LayoutProps/PageProps are generated into
+      # .next/types and referenced from next-env.d.ts, both of which are
+      # gitignored. A clean checkout has neither, so a bare `tsc` fails on
+      # types that exist on any machine that has run a build.
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
