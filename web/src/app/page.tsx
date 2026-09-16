@@ -1,10 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { ContractPanel } from "@/components/ContractPanel";
 import { ResultTabs } from "@/components/Tabs";
 import { Card, Metric, Note, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
+
+// Leaflet reaches for `window` as it loads, so the map never server-renders.
+const MapOverview = dynamic(
+  () => import("@/components/MapOverview").then((m) => m.MapOverview),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[380px] w-full animate-pulse rounded-lg border border-[var(--border)] bg-[var(--surface)]" />
+    ),
+  },
+);
 import { mwh, pct, usd, usdCompact } from "@/lib/format";
 import type {
   AnalysisRequest,
@@ -23,6 +35,7 @@ const message = (e: unknown) =>
 export default function Home() {
   const [contracts, setContracts] = useState<ContractSummary[]>([]);
   const [contract, setContract] = useState<Contract | null>(null);
+  const [selectedFile, setSelectedFile] = useState("");
   const [year, setYear] = useState(2025);
   const [settleAtNode, setSettleAtNode] = useState(false);
   const [weather, setWeather] = useState<"tmy" | "actual">("tmy");
@@ -43,7 +56,10 @@ export default function Home() {
       .contracts()
       .then((list) => {
         setContracts(list);
-        if (list.length) setContract(list[0].contract);
+        if (list.length) {
+          setContract(list[0].contract);
+          setSelectedFile(list[0].file);
+        }
       })
       .catch((e) =>
         setError(
@@ -82,6 +98,21 @@ export default function Home() {
     // selection on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contract]);
+
+  const selectContract = useCallback(
+    (file: string) => {
+      const found = contracts.find((c) => c.file === file);
+      if (!found) return;
+      setSelectedFile(file);
+      setContract(found.contract);
+    },
+    [contracts],
+  );
+
+  const totalMw = useMemo(
+    () => contracts.reduce((sum, c) => sum + c.contract_mw, 0),
+    [contracts],
+  );
 
   const run = useCallback(async () => {
     if (!contract) return;
@@ -134,6 +165,21 @@ export default function Home() {
         </p>
       </header>
 
+      {contracts.length > 0 && (
+        <Card title="Contracted projects" className="mb-6">
+          <p className="mb-3 text-sm text-[var(--muted)]">
+            {contracts.length} deals across {totalMw.toLocaleString()} MW of ERCOT
+            solar. West Texas sits in the state&apos;s densest solar cluster, which is
+            where capture rates are worst — the map is the geography behind that result.
+          </p>
+          <MapOverview
+            contracts={contracts}
+            selected={selectedFile}
+            onSelect={selectContract}
+          />
+        </Card>
+      )}
+
       <Card title="Contract" className="mb-6">
         <ContractPanel
           contracts={contracts}
@@ -146,6 +192,8 @@ export default function Home() {
           weather={weather}
           onWeather={setWeather}
           availability={availability}
+          selectedFile={selectedFile}
+          onSelectFile={selectContract}
         />
         <div className="mt-5 flex items-center gap-4">
           <button

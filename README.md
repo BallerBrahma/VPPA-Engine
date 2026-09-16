@@ -242,6 +242,27 @@ No project clears 78%, and every breakeven strike lands between $21.64 and
 $25.50/MWh. A deal struck against a time-weighted forward is above that band
 before basis, before curtailment, and before any of it is negotiated.
 
+## The map
+
+The landing page opens on all eight projects plotted on an OpenStreetMap
+basemap, sized by contracted capacity and clickable to load a deal. It is there
+because the headline result is partly geographic: West Texas sits in ERCOT's
+densest solar cluster and captures 63.0% against 70-78% everywhere else, and
+that is easier to see on a map than in a table of node names.
+
+Nothing on the map is geocoded. Every real asset carries a surveyed coordinate
+from EIA-860, and replacing one with the centroid of a county would be less
+accurate, not more. Geocoding earns its place in one spot instead: the contract
+editor can move a project to a named place, for a deal being written against a
+site with no EIA row yet. That goes through `/api/geocode`, which proxies
+OpenStreetMap's Nominatim server-side so its usage policy is actually honoured
+-- one request per second, an identifying User-Agent, and cached results -- and
+warns that a place centroid will move the modelled weather site.
+
+Tiles are CARTO's raster renderings of OpenStreetMap data, in a light and a
+dark style, so the basemap follows the app's colour scheme instead of stranding
+dark mode on a bright map.
+
 ## Knowing what can be run before running it
 
 Not every contract-year is answerable, and the old UI found that out the

@@ -23,9 +23,11 @@ from vppa.api.models import (
     BasisMonthRow,
     BasisResponse,
     ContractSummary,
+    GeocodeResponse,
     HourRow,
     MonthRow,
     OptionAvailability,
+    PlaceResult,
     ScenarioRow,
     ScenariosResponse,
     SettlementResponse,
@@ -44,6 +46,8 @@ from vppa.engine.metrics import (
 from vppa.engine.scenarios import run_scenarios
 from vppa.engine.settlement import settle
 from vppa.ingest.generation import fetch_pvwatts_generation
+from vppa.ingest.geocode import reverse as reverse_geocode
+from vppa.ingest.geocode import search as geocode_search
 from vppa.ingest.prices import fetch_ercot_dam_prices, fetch_ercot_hub_dam_prices
 from vppa.ingest.settlement_points import fetch_settlement_points, known_nodes
 from vppa.model import Contract, load_contract
@@ -350,6 +354,56 @@ def storage(request: AnalysisRequest) -> StorageResponse:
             )
             for hour, row in day.iterrows()
         ],
+    )
+
+
+@app.get("/api/geocode", response_model=GeocodeResponse)
+def geocode(q: str, limit: int = 5) -> GeocodeResponse:
+    """Look up a place by name, for repositioning a project while editing it.
+
+    The shipped contracts never reach this: EIA-860 already gives every real
+    asset a coordinate, and inventing one by name would be less accurate, not
+    more. This is for a deal being written against a site that has no EIA row
+    yet.
+    """
+    try:
+        places = geocode_search(q, limit=max(1, min(limit, 10)))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Place lookup is unavailable: {exc}"
+        ) from exc
+    return GeocodeResponse(
+        query=q,
+        places=[
+            PlaceResult(
+                display_name=p.display_name,
+                lat=p.lat,
+                lon=p.lon,
+                county=p.county,
+                state=p.state,
+            )
+            for p in places
+        ],
+    )
+
+
+@app.get("/api/geocode/reverse", response_model=PlaceResult | None)
+def geocode_reverse(lat: float, lon: float) -> PlaceResult | None:
+    """The place at a coordinate, so a moved project can relabel itself."""
+    try:
+        place = reverse_geocode(lat, lon)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Place lookup is unavailable: {exc}"
+        ) from exc
+    if place is None:
+        return None
+    return PlaceResult(
+        display_name=place.display_name,
+        lat=place.lat,
+        lon=place.lon,
+        county=place.county,
+        state=place.state,
     )
 
 

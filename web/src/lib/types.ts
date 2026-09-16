@@ -143,3 +143,13 @@ export type StorageResponse = {
   cycles: number;
   average_day: { hour: number; generation_mwh: number; delivered_mwh: number }[];
 };
+
+export type PlaceResult = {
+  display_name: string;
+  lat: number;
+  lon: number;
+  county: string | null;
+  state: string | null;
+};
+
+export type GeocodeResponse = { query: string; places: PlaceResult[] };

@@ -273,3 +273,47 @@ def test_availability_marks_a_contract_without_a_battery(example_contract):
     }
     body = client.post("/api/availability", json={"contract": with_battery}).json()
     assert body["storage"]["available"] is True
+
+
+def test_geocode_endpoint_shapes_places_for_the_editor(monkeypatch):
+    from vppa.ingest.geocode import Place
+
+    monkeypatch.setattr(
+        "vppa.api.main.geocode_search",
+        lambda q, limit: [
+            Place("Pecos County, Texas", 30.88, -102.72, county="Pecos", state="Texas")
+        ],
+    )
+
+    body = client.get("/api/geocode", params={"q": "Pecos County"}).json()
+
+    assert body["places"][0]["county"] == "Pecos"
+    assert body["places"][0]["lat"] == 30.88
+
+
+def test_geocode_reports_a_donated_service_being_down_as_503(monkeypatch):
+    def boom(q, limit):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr("vppa.api.main.geocode_search", boom)
+
+    response = client.get("/api/geocode", params={"q": "anywhere"})
+
+    # not a 500: the request was fine, the upstream was not
+    assert response.status_code == 503
+    assert "unavailable" in response.json()["detail"]
+
+
+def test_geocode_limit_is_clamped(monkeypatch):
+    seen = []
+
+    def capture(q, limit):
+        seen.append(limit)
+        return []
+
+    monkeypatch.setattr("vppa.api.main.geocode_search", capture)
+
+    client.get("/api/geocode", params={"q": "x", "limit": 500})
+    client.get("/api/geocode", params={"q": "x", "limit": 0})
+
+    assert seen == [10, 1]

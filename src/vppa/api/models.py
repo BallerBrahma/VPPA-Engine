@@ -144,3 +144,18 @@ class StorageResponse(BaseModel):
     round_trip_loss_mwh: float
     cycles: float
     average_day: list[HourRow]
+
+
+class PlaceResult(BaseModel):
+    """One geocoding match, in the shape the contract editor needs to apply it."""
+
+    display_name: str
+    lat: float
+    lon: float
+    county: str | None = None
+    state: str | None = None
+
+
+class GeocodeResponse(BaseModel):
+    query: str
+    places: list[PlaceResult]

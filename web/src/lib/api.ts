@@ -4,6 +4,7 @@ import type {
   BasisResponse,
   Contract,
   ContractSummary,
+  GeocodeResponse,
   ScenariosResponse,
   SettlementResponse,
   StorageResponse,
@@ -66,4 +67,6 @@ export const api = {
     post("/api/storage", r),
   availability: (contract: Contract): Promise<AvailabilityResponse> =>
     post("/api/availability", { contract }),
+  geocode: (query: string): Promise<GeocodeResponse> =>
+    fetch(`${BASE}/api/geocode?q=${encodeURIComponent(query)}`).then(unwrap),
 };

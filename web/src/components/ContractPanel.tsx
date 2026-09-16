@@ -8,6 +8,7 @@ import type {
   OptionAvailability,
 } from "@/lib/types";
 import { ContractBrowser } from "./ContractBrowser";
+import { PlaceSearch } from "./PlaceSearch";
 import { Note } from "./ui";
 
 type Source = "built-in" | "upload" | "edit";
@@ -254,6 +255,8 @@ export function ContractPanel({
   weather,
   onWeather,
   availability,
+  selectedFile,
+  onSelectFile,
 }: {
   contracts: ContractSummary[];
   contract: Contract | null;
@@ -265,6 +268,8 @@ export function ContractPanel({
   weather: "tmy" | "actual";
   onWeather: (w: "tmy" | "actual") => void;
   availability: AvailabilityResponse | null;
+  selectedFile: string;
+  onSelectFile: (file: string) => void;
 }) {
   const OPEN: OptionAvailability = { available: true, cached: false, reason: null };
 
@@ -277,11 +282,7 @@ export function ContractPanel({
   const storage = availability?.storage ?? OPEN;
 
   const [source, setSource] = useState<Source>("built-in");
-  const [baseFile, setBaseFile] = useState<string>("");
-  // page.tsx selects the first contract on load, so mirror that as a derived
-  // default rather than syncing it into state -- a card is highlighted from
-  // the first paint and there is no effect to get out of step
-  const selectedFile = baseFile || contracts[0]?.file || "";
+  // selection lives in the page so the map and the card grid stay in step
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const original = useMemo(
@@ -301,15 +302,33 @@ export function ContractPanel({
       .map((f) => f.label);
   }, [original, contract]);
 
-  const pick = (file: string) => {
-    setBaseFile(file);
-    const found = contracts.find((c) => c.file === file);
-    if (found) onContract(found.contract);
-  };
+
 
   const update = (path: string, value: unknown) => {
     if (!contract) return;
     onContract(set(contract as unknown as Json, path, value) as unknown as Contract);
+  };
+
+  // one update, not four: applying a place as separate field edits would send
+  // four contracts through validation and leave the county disagreeing with
+  // the coordinate in between
+  const applyPlace = (place: {
+    lat: number;
+    lon: number;
+    county: string | null;
+    state: string | null;
+  }) => {
+    if (!contract) return;
+    onContract({
+      ...contract,
+      project: {
+        ...contract.project,
+        lat: Number(place.lat.toFixed(4)),
+        lon: Number(place.lon.toFixed(4)),
+        county: place.county,
+        state: place.state,
+      },
+    });
   };
 
   const toggleStorage = (on: boolean) => {
@@ -340,7 +359,7 @@ export function ContractPanel({
         <ContractBrowser
           contracts={contracts}
           selected={selectedFile}
-          onSelect={pick}
+          onSelect={onSelectFile}
         />
       )}
 
@@ -472,6 +491,7 @@ export function ContractPanel({
                   onChange={update}
                 />
               ))}
+              {group.title === "Project" && <PlaceSearch onPick={applyPlace} />}
             </div>
           ))}
 
