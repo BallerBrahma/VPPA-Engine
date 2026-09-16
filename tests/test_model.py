@@ -116,3 +116,32 @@ def test_covers_year_bounds_the_term(example_contract):
     assert example_contract.covers_year(2025)
     assert not example_contract.covers_year(2019)
     assert not example_contract.covers_year(2026)
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("name", "../../../../tmp/evil"),
+        ("name", "has spaces"),
+        ("hub", "../HB_WEST"),
+        ("node", "nodes/LAMESASLR_G"),
+        ("name", ""),
+    ],
+)
+def test_contract_rejects_names_that_would_escape_the_cache(
+    example_contract, field, value
+):
+    """These land in cache directory paths, and manual entry in the UI makes
+    every one of them user-supplied."""
+    payload = example_contract.model_dump()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        Contract.model_validate(payload)
+
+
+def test_a_contract_may_name_no_node_at_all(example_contract):
+    payload = example_contract.model_dump()
+    payload["node"] = ""
+
+    assert Contract.model_validate(payload).node == ""

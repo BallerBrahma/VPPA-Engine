@@ -9,12 +9,29 @@ fall-back, and missing values.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+# A contract name and its settlement points become directory names in the
+# Parquet cache, and every one of them can arrive from a hand-typed form or a
+# posted request body. Constrain them here so the error names the field, rather
+# than surfacing from the filesystem later.
+_CACHE_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _validate_cache_safe(value: str, label: str) -> str:
+    if not _CACHE_SAFE_NAME.match(value):
+        raise ValueError(
+            f"{label} must start with a letter or digit and contain only "
+            f"letters, digits, underscores and hyphens (it is used as a cache "
+            f"directory name), got {value!r}"
+        )
+    return value
 
 
 def _validate_utc_series(series: pd.Series, label: str) -> pd.Series:
@@ -215,6 +232,22 @@ class Contract(BaseModel):
     escalation_pct_yr: float = 0.0
     project: ProjectSpec
     storage: StorageSpec | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _cache_safe_name(cls, v: str) -> str:
+        return _validate_cache_safe(v, "name")
+
+    @field_validator("hub")
+    @classmethod
+    def _cache_safe_hub(cls, v: str) -> str:
+        return _validate_cache_safe(v, "hub")
+
+    @field_validator("node")
+    @classmethod
+    def _cache_safe_node(cls, v: str) -> str:
+        # a contract may legitimately name no node; a named one must be usable
+        return v if v == "" else _validate_cache_safe(v, "node")
 
     @field_validator("contract_mw")
     @classmethod

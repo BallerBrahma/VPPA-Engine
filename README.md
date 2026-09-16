@@ -181,6 +181,19 @@ its own partition, so a re-tuned project is re-run rather than silently served
 the previous version's series. Paperwork that PVWatts never sees (the strike,
 the floor) does not move the key, so re-striking a deal still reuses the run.
 
+Contracts reach the engine three ways -- picked from `contracts/`, uploaded as
+JSON, or typed into the form -- and all three go through the same pydantic
+`Contract`. The form validates against the server on every edit rather than
+against a second copy of the rules in the browser, because a client-side schema
+that drifted from the model would be worse than no check at all.
+
+That makes a contract's fields user-supplied, which matters more than it looks:
+the name, hub and node become directory names in the Parquet cache, so a typed
+`../../..` would have written outside the data directory. Those fields are
+constrained in `model.py`, and `store.cache_path` independently refuses any key
+that is not a single directory name and confirms the resolved path is still
+contained.
+
 The engine layer holds every number the project reports and does no I/O, so it
 is testable from small in-memory fixtures with no network. Both front ends are
 deliberately thin: they fetch, align and display, but compute nothing, so the

@@ -33,3 +33,33 @@ def test_write_refuses_to_overwrite(tmp_path, monkeypatch):
 
     with pytest.raises(FileExistsError, match="never mutated"):
         store.write_series(series, source="generation", key="proj", year=2024)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["../escape", "../../../../tmp/pwned", "a/b", "a\\b", ".", "..", "", ".hidden"],
+)
+def test_cache_path_refuses_a_key_that_is_not_a_single_directory_name(key):
+    # a contract name, hub and node all reach this from a posted request body
+    with pytest.raises(ValueError):
+        store.cache_path("generation", key, 2025)
+
+
+def test_cache_path_stays_inside_the_data_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+
+    path = store.cache_path("generation", "lamesa_solar_west__abc123", 2025)
+
+    assert path.resolve().is_relative_to(tmp_path.resolve())
+
+
+def test_write_series_refuses_an_escaping_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    index = pd.date_range("2025-01-01", periods=3, freq="h", tz="UTC")
+
+    with pytest.raises(ValueError):
+        store.write_series(
+            pd.Series(1.0, index=index), source="generation", key="../out", year=2025
+        )
+
+    assert list(tmp_path.parent.glob("out")) == []

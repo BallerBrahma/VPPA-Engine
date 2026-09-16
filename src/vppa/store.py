@@ -15,8 +15,35 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("VPPA_DATA_DIR", _REPO_ROOT / "data"))
 
 
+def _safe_component(value: str, label: str) -> str:
+    """Reject anything that would not be a single directory name.
+
+    `key` is caller-supplied all the way from a contract body -- the contract
+    name, a hub, a node -- so this is the boundary where a hand-typed or posted
+    value stops being text and becomes a filesystem path. Without it,
+    name="../../.." writes the cache outside the data directory entirely.
+    """
+    if not value or value in (".", "..") or value.startswith("."):
+        raise ValueError(f"{label} must be a non-empty name, got {value!r}")
+    if "/" in value or "\\" in value or "\0" in value:
+        raise ValueError(f"{label} must not contain a path separator, got {value!r}")
+    return value
+
+
 def cache_path(source: str, key: str, year: int) -> Path:
-    return DATA_DIR / source / key / f"{year}.parquet"
+    """Path for one cached partition, guaranteed to sit under DATA_DIR."""
+    _safe_component(source, "cache source")
+    _safe_component(key, "cache key")
+
+    path = DATA_DIR / source / key / f"{year}.parquet"
+
+    # Belt and braces: the component check above should make this unreachable,
+    # but the cost of being wrong is a write outside the project, so confirm
+    # the resolved path really is contained before handing it back.
+    root = DATA_DIR.resolve()
+    if not path.resolve().is_relative_to(root):
+        raise ValueError(f"refusing a cache path outside {root}: {path}")
+    return path
 
 
 def write_series(series: pd.Series, source: str, key: str, year: int) -> Path:

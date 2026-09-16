@@ -33,12 +33,15 @@ async function unwrap(response: Response) {
     if (typeof body.detail === "string") {
       detail = body.detail;
     } else if (Array.isArray(body.detail)) {
-      // FastAPI validation errors: surface the offending field, not a blob
+      // FastAPI validation errors: surface the offending field, not a blob.
+      // pydantic prefixes custom validators with "Value error, ", which is
+      // noise in a form that already names the field.
       detail = body.detail
-        .map(
-          (e: { loc?: (string | number)[]; msg?: string }) =>
-            `${(e.loc ?? []).filter((p) => p !== "body").join(".")}: ${e.msg}`,
-        )
+        .map((e: { loc?: (string | number)[]; msg?: string }) => {
+          const field = (e.loc ?? []).filter((p) => p !== "body").join(".");
+          const msg = (e.msg ?? "").replace(/^Value error,\s*/, "");
+          return field ? `${field}: ${msg}` : msg;
+        })
         .join("; ");
     }
   } catch {
@@ -67,6 +70,8 @@ export const api = {
     post("/api/storage", r),
   availability: (contract: Contract): Promise<AvailabilityResponse> =>
     post("/api/availability", { contract }),
+  validate: (contract: Contract): Promise<Contract> =>
+    post("/api/contracts/validate", contract),
   geocode: (query: string): Promise<GeocodeResponse> =>
     fetch(`${BASE}/api/geocode?q=${encodeURIComponent(query)}`).then(unwrap),
 };

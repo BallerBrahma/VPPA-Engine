@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AvailabilityResponse,
   Contract,
   ContractSummary,
   OptionAvailability,
 } from "@/lib/types";
+import { api, ApiError } from "@/lib/api";
 import { ContractBrowser } from "./ContractBrowser";
 import { PlaceSearch } from "./PlaceSearch";
 import { Note } from "./ui";
@@ -16,7 +17,41 @@ type Source = "built-in" | "upload" | "edit";
 const SOURCE_LABEL: Record<Source, string> = {
   "built-in": "Browse contracts",
   upload: "Upload a contract",
-  edit: "Edit fields",
+  edit: "Enter a contract",
+};
+
+/** A runnable starting point, not an empty form.
+ *
+ *  Every field here is required by the model, so blanking them all would just
+ *  produce a wall of validation errors before the first keystroke. These are
+ *  plainly placeholder values on a real ERCOT hub, so the form validates
+ *  immediately and each field can be replaced one at a time. */
+const BLANK_CONTRACT: Contract = {
+  name: "new_contract",
+  display_name: "Untitled deal",
+  counterparty_view: "buyer",
+  strike_usd_mwh: 35,
+  contract_mw: 100,
+  term: { start: "2025-01-01", end: "2034-12-31" },
+  settlement_index: "hub",
+  hub: "HB_WEST",
+  node: "",
+  negative_price_floor: 0,
+  escalation_pct_yr: 0,
+  project: {
+    lat: 31.9,
+    lon: -102.3,
+    dc_capacity_mw: 130,
+    tilt_deg: 25,
+    azimuth_deg: 180,
+    losses_pct: 14,
+    tracking: "single_axis_backtracked",
+    county: null,
+    state: null,
+    eia_plant_id: null,
+    commercial_operation: null,
+  },
+  storage: null,
 };
 
 /** A control the data cannot support, with the reason in place of the control.
@@ -42,13 +77,20 @@ type Field = {
   // "single_axis_backtracked" is the variable-name problem all over again
   optionLabels?: Record<string, string>;
   step?: number;
+  help?: string;
 };
 
 const GROUPS: { title: string; fields: Field[] }[] = [
   {
     title: "Contract terms",
     fields: [
-      { path: "name", label: "Name", kind: "text" },
+      { path: "display_name", label: "Project name", kind: "text" },
+      {
+        path: "name",
+        label: "Identifier",
+        kind: "text",
+        help: "Letters, digits, _ and - only — it names this contract's cache folder",
+      },
       {
         path: "counterparty_view",
         label: "Counterparty view",
@@ -157,11 +199,11 @@ function Row({
   onChange,
 }: {
   field: Field;
-  original: Json;
+  original: Json | null;
   current: Json;
   onChange: (path: string, value: unknown) => void;
 }) {
-  const was = get(original, field.path);
+  const was = original ? get(original, field.path) : undefined;
   const now = get(current, field.path);
   const changed = JSON.stringify(was) !== JSON.stringify(now);
 
@@ -231,14 +273,30 @@ function Row({
     }
   };
 
+  // With no contract to compare against, the "Original value" column has
+  // nothing to hold -- entering a deal from scratch is not a diff, so the row
+  // collapses to label and input.
+  const columns = original
+    ? "grid-cols-[1.6fr_1fr_1.4fr]"
+    : "grid-cols-[1.6fr_2.4fr]";
+
   return (
-    <div className="grid grid-cols-[1.6fr_1fr_1.4fr] items-center gap-3 border-b border-[var(--border)] py-2 last:border-0">
-      <div className="text-sm font-medium">{field.label}</div>
-      <div
-        className={`text-sm tabular-nums ${changed ? "text-[var(--series-2)] line-through" : "text-[var(--muted)]"}`}
-      >
-        {show(was, field)}
+    <div
+      className={`grid ${columns} items-center gap-3 border-b border-[var(--border)] py-2 last:border-0`}
+    >
+      <div>
+        <div className="text-sm font-medium">{field.label}</div>
+        {field.help && (
+          <div className="text-xs text-[var(--muted)]">{field.help}</div>
+        )}
       </div>
+      {original && (
+        <div
+          className={`text-sm tabular-nums ${changed ? "text-[var(--series-2)] line-through" : "text-[var(--muted)]"}`}
+        >
+          {show(was, field)}
+        </div>
+      )}
       <div className="text-sm">{input()}</div>
     </div>
   );
@@ -282,12 +340,20 @@ export function ContractPanel({
   const storage = availability?.storage ?? OPEN;
 
   const [source, setSource] = useState<Source>("built-in");
+  // Manual entry keeps its own base, independent of the browse selection: the
+  // grid picks what to *run*, this picks what to *start from*.
+  const [prefillFile, setPrefillFile] = useState<string>("");
+  const [validation, setValidation] = useState<
+    { status: "idle" | "checking" | "valid"; errors: null } | { status: "invalid"; errors: string }
+  >({ status: "idle", errors: null });
   // selection lives in the page so the map and the card grid stay in step
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // What the "Original value" column compares against. Blank manual entry has
+  // no original, and the column disappears rather than showing placeholders.
   const original = useMemo(
-    () => contracts.find((c) => c.file === selectedFile)?.contract ?? null,
-    [contracts, selectedFile],
+    () => contracts.find((c) => c.file === prefillFile)?.contract ?? null,
+    [contracts, prefillFile],
   );
 
   const changedFields = useMemo(() => {
@@ -308,6 +374,38 @@ export function ContractPanel({
     if (!contract) return;
     onContract(set(contract as unknown as Json, path, value) as unknown as Contract);
   };
+
+  // Validate as you type, against the server's own rules rather than a second
+  // copy of them in the browser -- a client-side schema that drifted from the
+  // pydantic model would be worse than no check at all. Debounced, because
+  // every keystroke in a number field is a new (usually half-typed) contract.
+  useEffect(() => {
+    if (source !== "edit" || !contract) return;
+
+    let stale = false;
+    // every state write happens inside the timer, never synchronously during
+    // the effect itself
+    const timer = setTimeout(() => {
+      if (stale) return;
+      setValidation({ status: "checking", errors: null });
+      api
+        .validate(contract)
+        .then(() => {
+          if (!stale) setValidation({ status: "valid", errors: null });
+        })
+        .catch((err) => {
+          if (stale) return;
+          setValidation({
+            status: "invalid",
+            errors: err instanceof ApiError ? err.message : "Could not check this contract",
+          });
+        });
+    }, 500);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [contract, source]);
 
   // one update, not four: applying a place as separate field edits would send
   // four contracts through validation and leave the county disagreeing with
@@ -343,7 +441,13 @@ export function ContractPanel({
           <button
             key={key}
             type="button"
-            onClick={() => setSource(key)}
+            onClick={() => {
+              // Entering the form from the grid should continue what you were
+              // looking at, not silently swap in a different contract: seed
+              // "Start from" with the browsed selection.
+              if (key === "edit" && !prefillFile) setPrefillFile(selectedFile);
+              setSource(key);
+            }}
             className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
               source === key
                 ? "border-[var(--series-1)] font-medium"
@@ -355,7 +459,7 @@ export function ContractPanel({
         ))}
       </div>
 
-      {(source === "built-in" || source === "edit") && (
+      {source === "built-in" && (
         <ContractBrowser
           contracts={contracts}
           selected={selectedFile}
@@ -471,59 +575,119 @@ export function ContractPanel({
         )}
       </div>
 
-      {source === "edit" && contract && original && (
-        <div className="rounded-lg border border-[var(--border)] p-4">
-          <div className="grid grid-cols-[1.6fr_1fr_1.4fr] gap-3 pb-2 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-            <div>Field</div>
-            <div>Original value</div>
-            <div>New value</div>
-          </div>
-
-          {GROUPS.map((group) => (
-            <div key={group.title} className="mt-4 first:mt-0">
-              <h3 className="mb-1 text-sm font-semibold">{group.title}</h3>
-              {group.fields.map((f) => (
-                <Row
-                  key={f.path}
-                  field={f}
-                  original={original as unknown as Json}
-                  current={contract as unknown as Json}
-                  onChange={update}
-                />
-              ))}
-              {group.title === "Project" && <PlaceSearch onPick={applyPlace} />}
-            </div>
-          ))}
-
-          <div className="mt-4">
-            <h3 className="mb-1 text-sm font-semibold">Storage overlay</h3>
-            <label className="flex items-center gap-2 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={contract.storage !== null}
-                onChange={(e) => toggleStorage(e.target.checked)}
-              />
-              Pair this project with a battery
+      {source === "edit" && contract && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <label className="text-sm">
+              <span className="mb-1 block text-[var(--muted)]">Start from</span>
+              <select
+                value={prefillFile}
+                onChange={(e) => {
+                  const file = e.target.value;
+                  setPrefillFile(file);
+                  const found = contracts.find((c) => c.file === file);
+                  onContract(
+                    found
+                      ? (structuredClone(found.contract) as Contract)
+                      : (structuredClone(BLANK_CONTRACT) as Contract),
+                  );
+                }}
+                className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5"
+              >
+                <option value="">A blank contract</option>
+                {contracts.map((c) => (
+                  <option key={c.file} value={c.file}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
             </label>
-            {contract.storage &&
-              STORAGE_FIELDS.map((f) => (
-                <Row
-                  key={f.path}
-                  field={f}
-                  original={original as unknown as Json}
-                  current={contract as unknown as Json}
-                  onChange={update}
-                />
-              ))}
+
+            <div className="text-sm">
+              {validation.status === "checking" && (
+                <span className="text-[var(--muted)]">Checking…</span>
+              )}
+              {validation.status === "valid" && (
+                <span className="text-[var(--positive)]">
+                  Valid — ready to run
+                </span>
+              )}
+              {validation.status === "invalid" && (
+                <span className="text-[var(--negative)]">Not valid yet</span>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 text-sm text-[var(--muted)]">
-            {changedFields.length
-              ? `Changed: ${changedFields.join(", ")}`
-              : "No changes yet — values match the contract on disk."}
+          {validation.status === "invalid" && (
+            <Note tone="error">{validation.errors}</Note>
+          )}
+
+          <div className="rounded-lg border border-[var(--border)] p-4">
+            <div
+              className={`grid ${
+                original ? "grid-cols-[1.6fr_1fr_1.4fr]" : "grid-cols-[1.6fr_2.4fr]"
+              } gap-3 pb-2 text-xs font-medium uppercase tracking-wide text-[var(--muted)]`}
+            >
+              <div>Field</div>
+              {original && <div>Original value</div>}
+              <div>{original ? "New value" : "Value"}</div>
+            </div>
+
+            {GROUPS.map((group) => (
+              <div key={group.title} className="mt-4 first:mt-0">
+                <h3 className="mb-1 text-sm font-semibold">{group.title}</h3>
+                {group.fields.map((f) => (
+                  <Row
+                    key={f.path}
+                    field={f}
+                    original={original as unknown as Json | null}
+                    current={contract as unknown as Json}
+                    onChange={update}
+                  />
+                ))}
+                {group.title === "Project" && <PlaceSearch onPick={applyPlace} />}
+              </div>
+            ))}
+
+            <div className="mt-4">
+              <h3 className="mb-1 text-sm font-semibold">Storage overlay</h3>
+              <label className="flex items-center gap-2 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={contract.storage !== null}
+                  onChange={(e) => toggleStorage(e.target.checked)}
+                />
+                Pair this project with a battery
+              </label>
+              {contract.storage &&
+                STORAGE_FIELDS.map((f) => (
+                  <Row
+                    key={f.path}
+                    field={f}
+                    original={original as unknown as Json | null}
+                    current={contract as unknown as Json}
+                    onChange={update}
+                  />
+                ))}
+            </div>
+
+            {original && (
+              <div className="mt-4 text-sm text-[var(--muted)]">
+                {changedFields.length
+                  ? `Changed: ${changedFields.join(", ")}`
+                  : "No changes yet — values match the contract on disk."}
+              </div>
+            )}
           </div>
+
+          <p className="text-sm text-[var(--muted)]">
+            A hand-entered contract runs exactly like a built-in one: it is validated
+            by the same rules the CLI applies, and its generation is cached against the
+            plant you described, not the name you gave it.
+          </p>
         </div>
       )}
+
     </div>
   );
 }
