@@ -27,3 +27,8 @@ storage:                          # Phase 4 overlay: 4-hour battery at ~25% of A
   power_mw: 69
   duration_hours: 4
   round_trip_efficiency: 0.85
+  cycling_cost_usd_mwh: 4.0       # amortised degradation per MWh discharged
+curtailment:                      # the plant declines to export at a loss
+  curtail_below_usd_mwh: 0.0      # merchant: walks away at $0. A project on the
+                                  # production tax credit would use ~-27.50,
+                                  # which is much of why ERCOT goes negative.

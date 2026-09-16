@@ -52,6 +52,7 @@ const BLANK_CONTRACT: Contract = {
     commercial_operation: null,
   },
   storage: null,
+  curtailment: { curtail_below_usd_mwh: 0 },
 };
 
 /** A control the data cannot support, with the reason in place of the control.
@@ -158,12 +159,30 @@ const STORAGE_FIELDS: Field[] = [
     kind: "number",
     step: 0.01,
   },
+  {
+    path: "storage.cycling_cost_usd_mwh",
+    label: "Degradation ($/MWh discharged)",
+    kind: "number",
+    step: 0.5,
+    help: "Wear is a variable cost — a warranty is written in throughput, not years",
+  },
+];
+
+const CURTAILMENT_FIELDS: Field[] = [
+  {
+    path: "curtailment.curtail_below_usd_mwh",
+    label: "Stop exporting below ($/MWh)",
+    kind: "number",
+    step: 0.5,
+    help: "0 for a merchant plant; about -27.50 for one earning the production tax credit",
+  },
 ];
 
 const STORAGE_DEFAULT = {
   power_mw: 50,
   duration_hours: 4,
   round_trip_efficiency: 0.85,
+  cycling_cost_usd_mwh: 4.0,
 };
 
 type Json = Record<string, unknown>;
@@ -358,7 +377,11 @@ export function ContractPanel({
 
   const changedFields = useMemo(() => {
     if (!original || !contract) return [];
-    const all = [...GROUPS.flatMap((g) => g.fields), ...STORAGE_FIELDS];
+    const all = [
+      ...GROUPS.flatMap((g) => g.fields),
+      ...STORAGE_FIELDS,
+      ...CURTAILMENT_FIELDS,
+    ];
     return all
       .filter(
         (f) =>
@@ -648,6 +671,35 @@ export function ContractPanel({
                 {group.title === "Project" && <PlaceSearch onPick={applyPlace} />}
               </div>
             ))}
+
+            <div className="mt-4">
+              <h3 className="mb-1 text-sm font-semibold">Curtailment</h3>
+              <label className="flex items-center gap-2 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={contract.curtailment !== null}
+                  onChange={(e) =>
+                    onContract({
+                      ...contract,
+                      curtailment: e.target.checked
+                        ? { curtail_below_usd_mwh: 0 }
+                        : null,
+                    })
+                  }
+                />
+                Let the plant decline to export at a loss
+              </label>
+              {contract.curtailment &&
+                CURTAILMENT_FIELDS.map((f) => (
+                  <Row
+                    key={f.path}
+                    field={f}
+                    original={original as unknown as Json | null}
+                    current={contract as unknown as Json}
+                    onChange={update}
+                  />
+                ))}
+            </div>
 
             <div className="mt-4">
               <h3 className="mb-1 text-sm font-semibold">Storage overlay</h3>

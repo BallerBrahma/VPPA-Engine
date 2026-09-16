@@ -166,17 +166,50 @@ export function ResultTabs({
                   value={pct(storage.capture_rate_with_storage)}
                   sub={`${points(storage.uplift_points)} vs ${pct(storage.capture_rate_base)}`}
                 />
-                <Stat label="Revenue uplift" value={usdCompact(storage.revenue_uplift_usd)} />
+                <Stat
+                  label="Revenue uplift"
+                  value={usdCompact(storage.revenue_uplift_usd)}
+                  sub={`${usdCompact(storage.revenue_uplift_daily_usd)} solved a day at a time`}
+                />
                 <Stat
                   label="Round-trip loss"
                   value={mwh(storage.round_trip_loss_mwh)}
                   sub={`${Math.round(storage.cycles).toLocaleString("en-US")} cycles`}
                 />
               </div>
+
+              <div className="mb-5 grid gap-4 sm:grid-cols-3">
+                <Stat
+                  label="Foresight premium"
+                  value={usdCompact(storage.foresight_premium_usd)}
+                  sub={`${pct(
+                    storage.revenue_uplift_usd
+                      ? storage.foresight_premium_usd / storage.revenue_uplift_usd
+                      : 0,
+                    0,
+                  )} of the uplift needs the whole year in advance`}
+                />
+                <Stat
+                  label="Degradation charged"
+                  value={usdCompact(-storage.cycling_cost_usd)}
+                  sub={
+                    storage.cycling_cost_usd
+                      ? "amortised wear, per MWh discharged"
+                      : "no cycling cost set — wear is free here"
+                  }
+                />
+                <Stat
+                  label="Curtailed instead of stored"
+                  value={mwh(storage.curtailed_mwh)}
+                  sub="energy the battery declined to absorb"
+                />
+              </div>
+
               <Note tone="warn">
-                Upper bound, not a forecast: the dispatch LP optimises against the whole
-                year&apos;s realised prices with perfect foresight, and carries no
-                degradation, cycling cost or capex.
+                Still an upper bound. The headline figure optimises against the whole
+                year&apos;s realised prices at once; the day-at-a-time figure beside it is
+                closer to what a day-ahead bidder actually knows, and the gap between them
+                is foresight nobody has. Neither carries capex.
               </Note>
               <div className="mt-4">
                 <DualSeriesChart

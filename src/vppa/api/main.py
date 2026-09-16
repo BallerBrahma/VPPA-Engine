@@ -35,7 +35,8 @@ from vppa.api.models import (
     YearAvailabilityRow,
 )
 from vppa.availability import offered_years, year_availability
-from vppa.engine.dispatch import dispatch, storage_uplift
+from vppa.engine.curtailment import curtailment_summary, economic_curtailment
+from vppa.engine.dispatch import dispatch, foresight_premium, storage_uplift
 from vppa.engine.metrics import (
     basis,
     breakeven_strike,
@@ -229,6 +230,16 @@ def list_contracts() -> list[ContractSummary]:
 def settlement(request: AnalysisRequest) -> SettlementResponse:
     contract, generation, price, _hub, _node, notes = _resolve(request)
 
+    # A plant that declines to export in an hour settles nothing in it, so
+    # curtailment has to happen before settle(), not as a note afterwards.
+    curtailment = None
+    if contract.curtailment is not None:
+        split = economic_curtailment(
+            generation, price, contract.curtailment.curtail_below_usd_mwh
+        )
+        curtailment = curtailment_summary(split, price)
+        generation = split["delivered"]
+
     strike = contract.strike_for_year(request.year)
     settled = settle(
         generation, price, strike=strike, floor=contract.negative_price_floor
@@ -253,6 +264,12 @@ def settlement(request: AnalysisRequest) -> SettlementResponse:
         hours=len(generation),
         in_term=contract.covers_year(request.year),
         notes=notes,
+        curtailed_mwh=curtailment["curtailed_mwh"] if curtailment else None,
+        curtailed_share=curtailment["curtailed_share"] if curtailment else None,
+        curtailed_hours=curtailment["curtailed_hours"] if curtailment else None,
+        curtailment_revenue_saved_usd=(
+            curtailment["revenue_saved_usd"] if curtailment else None
+        ),
         monthly=[
             MonthRow(
                 month=index.strftime("%b %Y"),
@@ -330,8 +347,12 @@ def storage(request: AnalysisRequest) -> StorageResponse:
         )
 
     spec = contract.storage
-    uplift = storage_uplift(generation, price, spec)
-    profile = dispatch(generation, price, spec)
+    threshold = (
+        contract.curtailment.curtail_below_usd_mwh if contract.curtailment else 0.0
+    )
+    uplift = storage_uplift(generation, price, spec, curtail_below_usd_mwh=threshold)
+    premium = foresight_premium(generation, price, spec, curtail_below_usd_mwh=threshold)
+    profile = dispatch(generation, price, spec, curtail_below_usd_mwh=threshold)
     day = profile.groupby(profile.index.hour)[["generation", "delivered"]].mean()
 
     return StorageResponse(
@@ -346,6 +367,11 @@ def storage(request: AnalysisRequest) -> StorageResponse:
         revenue_uplift_usd=uplift["revenue_uplift_usd"],
         round_trip_loss_mwh=uplift["round_trip_loss_mwh"],
         cycles=uplift["cycles"],
+        curtailed_mwh=uplift["curtailed_mwh"],
+        cycling_cost_usd=uplift["cycling_cost_usd"],
+        revenue_uplift_daily_usd=premium["revenue_uplift_daily_usd"],
+        foresight_premium_usd=premium["foresight_premium_usd"],
+        capture_rate_daily=premium["capture_rate_daily"],
         average_day=[
             HourRow(
                 hour=int(hour),

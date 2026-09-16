@@ -131,33 +131,101 @@ average stays positive.
 ## Storage: what it would take to fix it
 
 Pair each project with a 4-hour battery at roughly 25% of AC capacity, charging
-only from its own output, and dispatch it optimally against 2025 nodal prices:
+only from its own output, and dispatch it optimally against 2025 nodal prices.
+The battery decides for itself whether an oversupplied hour is worth storing or
+better spilled, so curtailment and storage compete inside the same optimisation
+rather than being stacked on top of one another:
 
-| Project | Capture rate | With storage | Uplift | Revenue uplift |
-|---|---|---|---|---|
-| Lamesa (West) | 47.6% | 71.8% | +24.3 pp | +$2.64M ($11.32/MWh) |
-| Noble (North) | 70.3% | 97.9% | +27.7 pp | +$4.18M ($7.56/MWh) |
-| Sun Valley (Central) | 34.4% | 72.6% | **+38.2 pp** | +$4.93M ($9.92/MWh) |
+| Project | As generated | After curtailment | With storage | Storage's own share of the uplift |
+|---|---:|---:|---:|---:|
+| Lamesa (West) | 47.6% | 49.4% | 73.8% | $2.64M of $2.66M |
+| Noble (North) | 70.3% | 76.6% | 103.7% | $4.08M of $4.42M |
+| Sun Valley (Central) | 34.4% | 74.1% | **110.0%** | $4.17M of $7.19M |
 
-The fix is largest where the problem is worst: Sun Valley, the project with the
-$13.79/MWh basis blowout, gains the most. That is the arc the whole exercise was
-built to trace — the shape problem, its cost, and what undoing it is worth.
+Splitting those two columns matters, and it corrects this project's own earlier
+claim. Sun Valley used to be reported as a +38.2 point storage uplift. Properly
+decomposed, curtailment does 39.7 points of that work and the battery does
+35.9 — **$3.02M of what was credited to storage was simply the plant declining
+to sell at a loss**, which needs no capital at all. That is exactly the error
+the limitations section used to warn about, now measured instead of suspected.
 
-**Two caveats make these upper bounds, not forecasts:**
+Capture rates above 100% are not a bug. Once the plant stops selling into
+negative hours, its delivered energy is weighted entirely toward above-average
+prices, so the generation-weighted average can exceed the time-weighted one.
+It means the plant sold only into good hours, not that it beat the market.
 
-- **The dispatch has perfect foresight.** The LP optimises against the whole
-  year's realised prices at once. A real operator dispatches against a forecast
-  and will capture materially less. This is the single biggest reason to read
-  these numbers as a ceiling.
-- **No degradation, no cycling cost, no capex.** The optimiser cycles ~390–450
-  times a year, above the ~365 many warranties assume, because nothing in the
-  objective penalises a cycle. And this is *gross revenue uplift* — it says
-  nothing about whether the battery pays for itself. A 62 MW / 248 MWh system is
-  a nine-figure capital decision that this model does not attempt.
+The battery is far from a complete answer even so. Sun Valley still spills
+91,879 MWh — around 30% of output — because a 248 MWh battery cannot absorb 736
+hours of negative pricing.
+
+**What is still a ceiling:**
+
+- **Foresight.** The headline LP optimises against the whole year's realised
+  prices at once. Solving each ERCOT operating day independently, which is far
+  closer to what a day-ahead bidder knows, costs about 9.5% of the uplift
+  ($2.43M against $2.66M at Lamesa). Both modes still use realised rather than
+  forecast prices, so even the daily figure is optimistic.
+- **Degradation is now charged** at `cycling_cost_usd_mwh`, defaulting to
+  $4/MWh discharged in the shipped contracts -- $133k to $337k a year here,
+  7-9% of the uplift. It barely changes the dispatch, because ERCOT's daily
+  spreads dwarf $4/MWh, but it is a real cost against the revenue. The
+  optimiser now cycles 359-390 times a year rather than 390-450, since an
+  inverter constraint stops it charging and discharging in the same hour.
+- **No capex.** This is gross revenue uplift and says nothing about whether the
+  battery pays for itself. A 62 MW / 248 MWh system is a nine-figure capital
+  decision this model does not attempt.
 
 Round-trip losses are real in the figures: delivered volume is strictly below
-generation (16,627 MWh lost for Sun Valley), so every dollar of uplift comes
-from better price capture rather than from more energy.
+generation net of curtailment, so every dollar of uplift comes from better price
+capture rather than from more energy.
+
+## Curtailment: the hours the plant declines to sell
+
+A solar plant is not obliged to generate. When the price is below what the
+operator nets per megawatt-hour, exporting destroys value and the plant stops.
+Those are exactly the saturated hours this project is about, so a model that
+exports through them overstates both volume and loss.
+
+Curtailment is now a contract term (`curtailment.curtail_below_usd_mwh`) and
+the effect is large where prices actually go negative:
+
+| Lamesa, hub-settled, 2025 | uncurtailed | curtailed |
+|---|---:|---:|
+| Delivered volume | 233,616 MWh | 213,402 MWh |
+| Capture rate | 63.0% | **70.2%** |
+| Net cash to buyer | -$2.42M | **-$1.77M** |
+
+Curtailment removes 8.65% of output across 303 hours and makes the buyer
+$650,000 *better* off, which is the opposite of what "lower volumes" suggests.
+Every curtailed hour was one the buyer was paying into: at a price below the
+strike, not producing is worth more to them than producing. Volume falls and
+losses fall with it.
+
+**It barely matters at the hub, and enormously at the node.** HB_NORTH did not
+print a single negative day-ahead hour in 2025 — its minimum was exactly $0.00 —
+so the four North Texas contracts curtail nothing. Their nodes are a different
+market entirely:
+
+| Node, 2025 | negative hours | curtailed | capture rate |
+|---|---:|---:|---:|
+| `SUNVASLR_ALL` (Sun Valley) | 736 | 24.1% | 34.4% -> **74.1%** |
+| `NOBLESLR_ALL` (Noble) | 433 | 5.7% | 70.3% -> 76.6% |
+| `LAMESASLR_G` (Lamesa) | 110 | 3.4% | 47.6% -> 49.4% |
+
+Sun Valley's node spent 736 hours below zero in a year its hub never went
+negative once. The 34.4% nodal capture rate reported further up this README
+assumed the plant exported through all of them; no operator would. Curtailment
+more than doubles it.
+
+**Whether the project earns the production tax credit dominates the answer.**
+The credit is earned per megawatt-hour produced, so a PTC project keeps
+generating to roughly -$27.50/MWh — which is much of why ERCOT goes negative at
+all. At that threshold Sun Valley's 2025 curtailment falls from 24.1% to 12.3%,
+and Lamesa's 2024 from 8.5% to 0.04%. The model takes the walk-away price as an
+input rather than assuming the plant is irrational.
+
+Only *economic* curtailment is modelled. ERCOT also curtails for congestion and
+reliability reasons unrelated to price, so treat these as a lower bound.
 
 ## Architecture
 
@@ -371,13 +439,20 @@ These are choices, not facts, and they move the numbers:
   hours at the $9,000 cap. The denominator is doing that, not the thesis.
 - Capture rate is computed against day-ahead hub prices. A project settling
   real-time, or at its own node, faces a different number.
-- No curtailment modelling. Real projects are curtailed during the same
-  oversupplied hours this analysis prices at or below zero, so realized volumes
-  would be lower than modelled. The storage overlay is therefore credited with
-  absorbing energy that a real plant might simply have curtailed more cheaply.
-- The battery LP assumes perfect price foresight and charges only from the
-  project's own output. It carries no degradation, cycling cost or capex, so
-  its uplift is an upper bound on what a real asset would earn.
+- Only *economic* curtailment is modelled -- the plant stopping because the
+  price is below its walk-away point. ERCOT also curtails for congestion and
+  reliability reasons that have nothing to do with price, and none of that is
+  here, so the curtailment figures above are a lower bound.
+- The battery still charges only from the project's own output, and carries no
+  capex. Two of the three things that made its uplift an upper bound are now
+  measured rather than assumed: degradation is charged per MWh discharged
+  (`cycling_cost_usd_mwh`, 7-9% of the uplift at $4/MWh), and the
+  perfect-foresight assumption is bounded by solving each operating day on its
+  own, which is closer to what a day-ahead bidder knows. That premium is about
+  9.5% of the headline figure. Together they take roughly a sixth off it.
+- The daily-foresight comparison is a bound, not a simulation. A real bidder
+  works from forecast prices, not the realised ones both modes use here, so
+  even the day-at-a-time number is optimistic.
 - Nodal price history comes from a commercial API (gridstatus.io); ERCOT's free
   archive covers only hubs and load zones, plus a ~31-day rolling window of nodal
   prices.

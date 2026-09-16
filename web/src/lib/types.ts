@@ -20,7 +20,10 @@ export type StorageSpec = {
   power_mw: number;
   duration_hours: number;
   round_trip_efficiency: number;
+  cycling_cost_usd_mwh: number;
 };
+
+export type CurtailmentSpec = { curtail_below_usd_mwh: number };
 
 export type Contract = {
   name: string;
@@ -36,6 +39,7 @@ export type Contract = {
   escalation_pct_yr: number;
   project: ProjectSpec;
   storage: StorageSpec | null;
+  curtailment: CurtailmentSpec | null;
 };
 
 export type ContractSummary = {
@@ -109,6 +113,12 @@ export type SettlementResponse = {
   in_term: boolean;
   notes: string[];
   monthly: MonthRow[];
+  // null when the contract does not model curtailment, which is different from
+  // modelling it and finding none
+  curtailed_mwh: number | null;
+  curtailed_share: number | null;
+  curtailed_hours: number | null;
+  curtailment_revenue_saved_usd: number | null;
 };
 
 export type BasisResponse = {
@@ -141,6 +151,11 @@ export type StorageResponse = {
   revenue_uplift_usd: number;
   round_trip_loss_mwh: number;
   cycles: number;
+  curtailed_mwh: number;
+  cycling_cost_usd: number;
+  revenue_uplift_daily_usd: number;
+  foresight_premium_usd: number;
+  capture_rate_daily: number;
   average_day: { hour: number; generation_mwh: number; delivered_mwh: number }[];
 };
 

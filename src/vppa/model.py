@@ -191,12 +191,25 @@ class StorageSpec(BaseModel):
     power_mw: float
     duration_hours: float
     round_trip_efficiency: float = 0.85
+    # Amortised degradation, charged per MWh discharged. A battery's warranty
+    # is denominated in throughput, so wear is a variable cost of using it, not
+    # a fixed one -- and a dispatch that ignores it will cycle for spreads that
+    # do not cover the cell life they consume. Around 2-5 $/MWh is typical for
+    # lithium-ion; 0 reproduces a run that pretends cycling is free.
+    cycling_cost_usd_mwh: float = 0.0
 
     @field_validator("power_mw", "duration_hours")
     @classmethod
     def _positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError(f"must be positive, got {v}")
+        return v
+
+    @field_validator("cycling_cost_usd_mwh")
+    @classmethod
+    def _non_negative_cycling_cost(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError(f"cycling_cost_usd_mwh must not be negative, got {v}")
         return v
 
     @field_validator("round_trip_efficiency")
@@ -209,6 +222,23 @@ class StorageSpec(BaseModel):
     @property
     def energy_capacity_mwh(self) -> float:
         return self.power_mw * self.duration_hours
+
+
+class CurtailmentSpec(BaseModel):
+    """When the plant stops exporting.
+
+    Separate from the contract's negative_price_floor, which caps how far a
+    negative price can push the *settlement* while the plant keeps generating.
+    This is the physical decision to stop.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    curtail_below_usd_mwh: float = 0.0
+    """The operator's walk-away price. 0 is a merchant plant. A project earning
+    the production tax credit keeps generating into negative prices because the
+    credit is earned per megawatt-hour produced, so use roughly -27.50 for the
+    2024 PTC rather than pretending the plant is irrational."""
 
 
 class Contract(BaseModel):
@@ -232,6 +262,10 @@ class Contract(BaseModel):
     escalation_pct_yr: float = 0.0
     project: ProjectSpec
     storage: StorageSpec | None = None
+    # None means curtailment is not modelled at all, which is the honest
+    # default: it keeps a contract's numbers comparable with the uncurtailed
+    # figures this project published before the model existed.
+    curtailment: CurtailmentSpec | None = None
 
     @field_validator("name")
     @classmethod

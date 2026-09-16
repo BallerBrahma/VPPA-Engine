@@ -19,3 +19,7 @@ project:
   tilt_deg: 25
   azimuth_deg: 180
   losses_pct: 14
+curtailment:                      # the plant declines to export at a loss
+  curtail_below_usd_mwh: 0.0      # merchant: walks away at $0. A project on the
+                                  # production tax credit would use ~-27.50,
+                                  # which is much of why ERCOT goes negative.

@@ -98,6 +98,12 @@ class SettlementResponse(BaseModel):
     in_term: bool
     notes: list[str]
     monthly: list[MonthRow]
+    # None when the contract does not model curtailment at all, which is
+    # different from modelling it and finding none.
+    curtailed_mwh: float | None = None
+    curtailed_share: float | None = None
+    curtailed_hours: int | None = None
+    curtailment_revenue_saved_usd: float | None = None
 
 
 class BasisMonthRow(BaseModel):
@@ -143,6 +149,13 @@ class StorageResponse(BaseModel):
     revenue_uplift_usd: float
     round_trip_loss_mwh: float
     cycles: float
+    curtailed_mwh: float
+    cycling_cost_usd: float
+    # the same battery solved a day at a time, which is what a day-ahead bidder
+    # actually knows; the gap is the premium the headline number carries
+    revenue_uplift_daily_usd: float
+    foresight_premium_usd: float
+    capture_rate_daily: float
     average_day: list[HourRow]
 
 

@@ -27,3 +27,7 @@ project:
   state: TX
   eia_plant_id: 66137
   commercial_operation: 2024-04-01
+curtailment:                      # the plant declines to export at a loss
+  curtail_below_usd_mwh: 0.0      # merchant: walks away at $0. A project on the
+                                  # production tax credit would use ~-27.50,
+                                  # which is much of why ERCOT goes negative.

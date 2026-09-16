@@ -317,3 +317,85 @@ def test_geocode_limit_is_clamped(monkeypatch):
     client.get("/api/geocode", params={"q": "x", "limit": 0})
 
     assert seen == [10, 1]
+
+
+def test_settlement_reports_curtailment_when_the_contract_models_it(
+    offline, example_contract
+):
+    payload = example_contract.model_dump(mode="json")
+    # a threshold above zero forces curtailment on this fixture, whose negative
+    # price hours are all at night when the plant produces nothing anyway
+    payload["curtailment"] = {"curtail_below_usd_mwh": 30.0}
+
+    body = client.post(
+        "/api/settlement", json={"contract": payload, "year": 2024}
+    ).json()
+
+    assert body["curtailed_mwh"] > 0
+    assert 0 < body["curtailed_share"] < 1
+    assert body["curtailed_hours"] > 0
+    # revenue_saved is measured at market price, so it is only positive when the
+    # walk-away price is at or below zero. Walking away from a $20 hour forgoes
+    # real revenue -- justified by an incentive the market price does not see,
+    # but a loss in this column. The sign here is information, not a bug.
+    assert body["curtailment_revenue_saved_usd"] < 0
+
+
+def test_curtailment_at_a_zero_threshold_never_costs_market_revenue(
+    offline, example_contract
+):
+    payload = example_contract.model_dump(mode="json")
+    payload["curtailment"] = {"curtail_below_usd_mwh": 0.0}
+
+    body = client.post(
+        "/api/settlement", json={"contract": payload, "year": 2024}
+    ).json()
+
+    assert body["curtailment_revenue_saved_usd"] >= 0
+
+
+def test_settlement_distinguishes_no_curtailment_from_none_modelled(
+    offline, example_contract
+):
+    payload = example_contract.model_dump(mode="json")
+    payload["curtailment"] = None
+
+    body = client.post(
+        "/api/settlement", json={"contract": payload, "year": 2024}
+    ).json()
+
+    # null means "not modelled", which is not the same as zero
+    assert body["curtailed_mwh"] is None
+    assert body["curtailed_share"] is None
+
+
+def test_curtailment_raises_capture_rate_and_cuts_volume(offline, example_contract):
+    base = example_contract.model_dump(mode="json")
+    base["curtailment"] = None
+    curtailed = {**base, "curtailment": {"curtail_below_usd_mwh": 20.0}}
+
+    a = client.post("/api/settlement", json={"contract": base, "year": 2024}).json()
+    b = client.post("/api/settlement", json={"contract": curtailed, "year": 2024}).json()
+
+    assert b["generation_mwh"] < a["generation_mwh"]
+    assert b["capture_rate"] > a["capture_rate"]
+    # and the buyer is better off, because the removed hours were losses
+    assert b["cash_to_counterparty_usd"] > a["cash_to_counterparty_usd"]
+
+
+def test_storage_reports_the_foresight_premium_and_wear(offline, example_contract):
+    payload = example_contract.model_dump(mode="json")
+    payload["storage"] = {
+        "power_mw": 50,
+        "duration_hours": 4,
+        "round_trip_efficiency": 0.85,
+        "cycling_cost_usd_mwh": 4.0,
+    }
+
+    body = client.post("/api/storage", json={"contract": payload, "year": 2024}).json()
+
+    # the annual LP has strictly more freedom than the daily one
+    assert body["revenue_uplift_usd"] >= body["revenue_uplift_daily_usd"]
+    assert body["foresight_premium_usd"] >= 0
+    assert body["cycling_cost_usd"] > 0
+    assert body["capture_rate_daily"] <= body["capture_rate_with_storage"]

@@ -263,6 +263,29 @@ export default function Home() {
                 production shape the deal is underwater for the buyer.
               </Note>
             )}
+            {settlement.curtailed_mwh !== null &&
+              settlement.curtailed_share !== null &&
+              settlement.curtailed_hours !== null && (
+                <Note>
+                  {settlement.curtailed_mwh > 0 ? (
+                    <>
+                      The plant curtailed {mwh(settlement.curtailed_mwh)} (
+                      {pct(settlement.curtailed_share)} of output) across{" "}
+                      {settlement.curtailed_hours.toLocaleString("en-US")} hours rather
+                      than export below its walk-away price. That cuts volume, but every
+                      curtailed hour was one the buyer was paying into — it avoided{" "}
+                      {usd(settlement.curtailment_revenue_saved_usd ?? 0)} of negative
+                      market revenue, and the capture rate above is measured on what was
+                      actually delivered.
+                    </>
+                  ) : (
+                    <>
+                      Curtailment is modelled, and this contract-year has none: the price
+                      never fell below the plant&apos;s walk-away point.
+                    </>
+                  )}
+                </Note>
+              )}
             {settlement.notes.map((n) => (
               <Note key={n}>{n}</Note>
             ))}
